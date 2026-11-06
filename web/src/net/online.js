@@ -116,7 +116,7 @@ export class OnlineRoom extends Emitter {
     switch (m.t) {
       case 'hello':
         if (this.isHost && !this.game) {
-          if (!this.players.find((p) => p.id === m.id) && this.players.length < 4) {
+          if (!this.players.find((p) => p.id === m.id) && this.players.length < 5) {
             this.players.push({ id: m.id, name: m.name, look: m.look });
             this.emit('joined', m);
           }

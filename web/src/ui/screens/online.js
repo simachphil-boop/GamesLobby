@@ -62,7 +62,7 @@ export function online(app) {
     const codeEl = h('div', { class: 'code' }, room.code);
     codeEl.addEventListener('click', () => { navigator.clipboard?.writeText(room.code).then(() => toast(t('on.copied'))).catch(() => {}); });
     body.append(h('div', { class: 'field' }, h('label', null, t('on.code')), codeEl), h('div', { class: 'mini center' }, t('on.hint')),
-      h('div', { class: 'section-t' }, t('on.players') + ` (${room.players.length}/4)`),
+      h('div', { class: 'section-t' }, t('on.players') + ` (${room.players.length}/5)`),
       ...room.players.map((p) => h('div', { class: 'list-item' }, h('div', null, p.id === room.hostId ? '👑' : '🙂'), h('div', { class: 'grow' }, p.name + (p.id === room.id ? ` (${t('you')})` : '')))),
       room.players.length < 2 ? h('div', { class: 'mini' }, t('on.waiting')) : null);
     if (room.isHost) {

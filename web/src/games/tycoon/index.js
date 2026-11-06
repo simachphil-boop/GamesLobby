@@ -130,7 +130,7 @@ class View extends ViewBase {
     const c = tileCenter(i);
     const a = along(i), n = inward(i);
     const k = i % 10 === 0 ? 1.6 : 1;
-    const offs = [[-0.024, 0.03], [0.024, 0.03], [-0.024, -0.025], [0.024, -0.025]][seat % 4];
+    const offs = [[-0.024, 0.03], [0.024, 0.03], [-0.024, -0.025], [0.024, -0.025], [0, 0.002]][seat % 5];
     let x = c.x + a.x * offs[0] * k + n.x * offs[1] * k, z = c.y + a.y * offs[0] * k + n.y * offs[1] * k;
     if (i === 10) {
       // jail corner: inmates sit in the inner cell, visitors on the outer edges
@@ -597,7 +597,7 @@ class View extends ViewBase {
 }
 
 export default {
-  id: 'tycoon', category: 'board', icon: '🏙️', minPlayers: 2, maxPlayers: 4, defaultPlayers: 4, quickPlayers: 4,
+  id: 'tycoon', category: 'board', icon: '🏙️', minPlayers: 2, maxPlayers: 5, defaultPlayers: 4, quickPlayers: 4,
   colors: ['#2f8a5a', '#0b2a1a'], rules, ai, View, undo: false,
   quickBots: (s) => ['auction', 'end', 'debt'].includes(s.phase),
   options: [

@@ -120,7 +120,7 @@ export function setup(app, gameId, mode = 'bots') {
   };
   render();
   const start = () => {
-    save.gameOptions[gameId] = { ...opts, _players: n, _humans: humans, _difficulty: difficulty, _personas: personas.slice(0, 4) };
+    save.gameOptions[gameId] = { ...opts, _players: n, _humans: humans, _difficulty: difficulty, _personas: personas.slice(0, 5) };
     commit();
     const seats = [];
     for (let i = 0; i < humans; i++) seats.push({ type: 'human' });

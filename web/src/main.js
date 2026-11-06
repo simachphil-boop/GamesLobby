@@ -43,7 +43,7 @@ function boot() {
     import('./games/registry.js').then(({ GAMES }) => {
       const def = GAMES.find((g) => g.id === q.get('auto'));
       const n = parseInt(q.get('n') || def.defaultPlayers || 2, 10);
-      const seats = []; const ids = ['alex', 'max', 'sofia', 'luna'];
+      const seats = []; const ids = ['alex', 'max', 'sofia', 'luna', 'leo', 'kira'];
       for (let i = 0; i < n; i++) seats.push(q.get('human') === '1' && i === 0 ? { type: 'human' } : { type: 'bot', personaId: ids[i], level: q.get('level') || 'normal' });
       const opts = {}; for (const o of def.options || []) opts[o.key] = q.get(o.key) || o.default;
       app.startMatch(def, { mode: 'bots', gameId: def.id, options: opts, seats });

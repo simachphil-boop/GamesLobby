@@ -127,6 +127,7 @@ class View extends ViewBase {
 }
 
 export default {
+  focus: 0.6,
   id: 'tictactoe', category: 'strategy', icon: '❌', minPlayers: 2, maxPlayers: 2, defaultPlayers: 2,
   colors: ['#ff4a9a', '#2a0a4a'], workerAI: true, rules, ai, View,
   options: [

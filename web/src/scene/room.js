@@ -16,7 +16,9 @@ export function seatAngles(n) {
   if (n <= 1) return [0];
   if (n === 2) return [0, Math.PI];
   if (n === 3) return [0, Math.PI * 0.62, -Math.PI * 0.62].map((a) => a);
-  return [0, Math.PI / 2, Math.PI, -Math.PI / 2];
+  if (n === 4) return [0, Math.PI / 2, Math.PI, -Math.PI / 2];
+  // 5-6 players: evenly spaced around the table, clockwise from the viewer
+  return Array.from({ length: n }, (_, i) => { const a = (i * 2 * Math.PI) / n; return a > Math.PI ? a - 2 * Math.PI : a; });
 }
 export function seatPosition(angle, r = SEAT_R) {
   return new THREE.Vector3(Math.sin(angle) * r, 0, Math.cos(angle) * r);

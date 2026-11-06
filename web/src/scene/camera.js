@@ -18,6 +18,7 @@ export class CameraRig {
     this.mode = save.settings.camera === 'tp' ? 'tp' : 'fp';
     this.cinematic = 'menu';
     this.seatAngle = 0;
+    this.focus = 0.92; // half-size of the play area; smaller boards bring the camera closer
     this.yawOff = 0; this.pitchOff = 0; this.zoom = 1;
     this.trans = null;
     this.tapHandlers = new Set();
@@ -34,7 +35,7 @@ export class CameraRig {
 
   layoutHandRig() {
     const portrait = window.innerWidth < window.innerHeight;
-    this.handRig.position.set(0, portrait ? -0.36 : -0.3, portrait ? -0.62 : -0.66);
+    this.handRig.position.set(0, portrait ? -0.25 : -0.17, portrait ? -0.62 : -0.66);
     this.handRig.userData.portrait = portrait;
   }
 
@@ -86,8 +87,9 @@ export class CameraRig {
       return { pos: new THREE.Vector3(-1.2, 1.6, 2.9), target: new THREE.Vector3(-2.8, 1.2, -6.5) };
     }
     if (this.mode === 'fp') {
-      const eye = seatPosition(a, SEAT_R - (portrait ? 0.02 : 0.12));
-      eye.y = portrait ? 1.52 : 1.42;
+      const f = this.focus;
+      const eye = seatPosition(a, Math.min(SEAT_R - 0.02, 0.86 + f * 0.8 - (portrait ? -0.08 : 0)));
+      eye.y = (portrait ? 1.16 : 1.08) + f * 0.37;
       const look = new THREE.Vector3(Math.sin(a) * (portrait ? 0.2 : 0.1), TABLE_Y, Math.cos(a) * (portrait ? 0.2 : 0.1));
       // apply look offsets (yaw around eye, pitch)
       const dir = look.clone().sub(eye);
@@ -106,7 +108,7 @@ export class CameraRig {
     // third person orbit
     const yaw = a + this.yawOff;
     const pitch = THREE.MathUtils.clamp(0.98 + this.pitchOff, 0.45, 1.45);
-    const d = (portrait ? 4.1 : 3.25) * this.zoom;
+    const d = (portrait ? 4.1 : 3.25) * this.zoom * (0.5 + this.focus * 0.55);
     const center = new THREE.Vector3(0, TABLE_Y, 0);
     const pos = new THREE.Vector3(Math.sin(yaw) * Math.cos(pitch) * d, Math.sin(pitch) * d + TABLE_Y, Math.cos(yaw) * Math.cos(pitch) * d);
     return { pos, target: center.clone().add(new THREE.Vector3(0, -0.05, 0)) };

@@ -27,7 +27,7 @@ import { tweens, disposeTree } from '../scene/engine.js';
 import { newSeed, makeRng } from '../core/rng.js';
 import { runAI } from '../ai/runner.js';
 
-export const SEAT_COLORS = ['#f7c95a', '#4aa8ff', '#ff5a7a', '#4ce39a'];
+export const SEAT_COLORS = ['#f7c95a', '#4aa8ff', '#ff5a7a', '#4ce39a', '#b07aff', '#ff9a3a'];
 export const LEVELS = ['easy', 'normal', 'hard', 'expert'];
 
 export class Match {
@@ -107,6 +107,7 @@ export class Match {
     this.hud = new Hud(this);
     this.app.mountHud(this.hud);
     this.hud.setPlayers(this.seats);
+    this.app.rig.focus = this.def.focus ?? 0.92;
     this.applyCameraSeat(this.me, false);
     const resumed = !!this.config.state;
     this.seed = this.config.seed ?? newSeed();
@@ -335,11 +336,12 @@ export class Match {
 
   showResults(res, outcome, reward) {
     const order = res.ranking || [...(res.winners || []), ...this.seats.map((s) => s.index).filter((i) => !(res.winners || []).includes(i))];
-    const title = outcome === 'win' ? t('res.win') : outcome === 'draw' ? t('res.draw') : t('res.lose');
+    const spectator = !this.humanSeats.length;
+    const title = spectator ? (res.draw ? t('res.draw') : t('res.winner', { name: this.seats[res.winners[0]]?.name || '' })) : outcome === 'win' ? t('res.win') : outcome === 'draw' ? t('res.draw') : t('res.lose');
     const winnerName = res.winners?.length === 1 ? this.seats[res.winners[0]].name : null;
     let m;
     const body = h('div', { class: 'col' },
-      h('div', { class: 'result-title' + (outcome === 'loss' ? ' lose' : '') }, title),
+      h('div', { class: 'result-title' + (outcome === 'loss' && !spectator ? ' lose' : ''), style: spectator ? { fontSize: '28px' } : null }, title),
       winnerName && !res.draw ? h('div', { class: 'center muted' }, t('res.winner', { name: winnerName })) : null,
       reward ? h('div', { class: 'reward' }, h('span', null, t('res.xp', { n: reward.xp })), h('span', null, h('i', { class: 'coin' }), ' ', t('res.coins', { n: reward.coins }))) : null,
       reward?.leveled ? h('div', { class: 'center gold' }, '⭐ ' + t('res.levelUp', { level: save.profile.level })) : null,

@@ -163,6 +163,7 @@ export class App {
     this.goMenu();
   }
   goMenu() {
+    this.rig.focus = 0.92;
     if (!this.lobby) this.startLobby();
     this.rig.setCinematic('menu');
     reset(this.screens.mainMenu, this);
