@@ -13,25 +13,46 @@
 
 static int file_exists(const wchar_t *p) { DWORD a = GetFileAttributesW(p); return a != INVALID_FILE_ATTRIBUTES && !(a & FILE_ATTRIBUTE_DIRECTORY); }
 
+/* Writes the game to dir\boardverse.html. Returns 1 if a usable copy is there afterwards. */
+static int unpack_to(const wchar_t *dir, const void *data, DWORD size, wchar_t *html, DWORD *err) {
+  wchar_t tmp[MAX_PATH];
+  CreateDirectoryW(dir, NULL);
+  swprintf(html, MAX_PATH, L"%s\\boardverse.html", dir);
+  WIN32_FILE_ATTRIBUTE_DATA fa;
+  if (GetFileAttributesExW(html, GetFileExInfoStandard, &fa) && fa.nFileSizeLow == size && fa.nFileSizeHigh == 0) return 1; /* up to date */
+  swprintf(tmp, MAX_PATH, L"%s\\boardverse.tmp", dir);
+  HANDLE f = CreateFileW(tmp, GENERIC_WRITE, 0, NULL, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
+  if (f == INVALID_HANDLE_VALUE) { *err = GetLastError(); return file_exists(html); }
+  DWORD w = 0;
+  BOOL ok = WriteFile(f, data, size, &w, NULL) && w == size;
+  CloseHandle(f);
+  if (!ok) { *err = GetLastError(); DeleteFileW(tmp); return file_exists(html); }
+  if (!MoveFileExW(tmp, html, MOVEFILE_REPLACE_EXISTING)) { *err = GetLastError(); DeleteFileW(tmp); return file_exists(html); } /* old copy still in use: keep using it */
+  return 1;
+}
+
 int WINAPI wWinMain(HINSTANCE hInst, HINSTANCE hPrev, PWSTR cmd, int show) {
   wchar_t base[MAX_PATH], html[MAX_PATH], profile[MAX_PATH], url[MAX_PATH * 2], args[MAX_PATH * 4];
-  if (FAILED(SHGetFolderPathW(NULL, CSIDL_LOCAL_APPDATA, NULL, 0, base))) { MessageBoxW(NULL, L"Cannot find AppData folder.", L"BOARDVERSE", MB_ICONERROR); return 1; }
-  wcscat(base, L"\\BOARDVERSE");
-  CreateDirectoryW(base, NULL);
-  swprintf(html, MAX_PATH, L"%s\\boardverse.html", base);
-  swprintf(profile, MAX_PATH, L"%s\\profile", base);
 
-  /* unpack the embedded game (rewritten when the size differs, i.e. after an update) */
   HRSRC r = FindResourceW(hInst, MAKEINTRESOURCEW(IDR_GAME), (LPCWSTR)RT_RCDATA);
   if (!r) { MessageBoxW(NULL, L"Game data missing.", L"BOARDVERSE", MB_ICONERROR); return 1; }
   DWORD size = SizeofResource(hInst, r);
   const void *data = LockResource(LoadResource(hInst, r));
-  WIN32_FILE_ATTRIBUTE_DATA fa;
-  if (!GetFileAttributesExW(html, GetFileExInfoStandard, &fa) || fa.nFileSizeLow != size) {
-    HANDLE f = CreateFileW(html, GENERIC_WRITE, 0, NULL, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
-    if (f == INVALID_HANDLE_VALUE) { MessageBoxW(NULL, L"Cannot write game files.", L"BOARDVERSE", MB_ICONERROR); return 1; }
-    DWORD w = 0; WriteFile(f, data, size, &w, NULL); CloseHandle(f);
+
+  /* candidate folders: LocalAppData, Temp, next to the exe */
+  wchar_t dirs[3][MAX_PATH]; int nd = 0;
+  if (SUCCEEDED(SHGetFolderPathW(NULL, CSIDL_LOCAL_APPDATA, NULL, 0, dirs[nd]))) { wcscat(dirs[nd], L"\\BOARDVERSE"); nd++; }
+  if (GetTempPathW(MAX_PATH, dirs[nd])) { wcscat(dirs[nd], L"BOARDVERSE"); nd++; }
+  if (GetModuleFileNameW(NULL, dirs[nd], MAX_PATH)) { wchar_t *sl = wcsrchr(dirs[nd], L'\\'); if (sl) { wcscpy(sl, L"\\BOARDVERSE-data"); nd++; } }
+  int ok = 0; DWORD err = 0;
+  for (int i = 0; i < nd && !ok; i++) { if (unpack_to(dirs[i], data, size, html, &err)) { wcscpy(base, dirs[i]); ok = 1; } }
+  if (!ok) {
+    wchar_t msg[512];
+    swprintf(msg, 512, L"Cannot write game files (Windows error %lu).\nTry running from another folder (e.g. Desktop) or allow BOARDVERSE in your antivirus.", err);
+    MessageBoxW(NULL, msg, L"BOARDVERSE", MB_ICONERROR);
+    return 1;
   }
+  swprintf(profile, MAX_PATH, L"%s\\profile", base);
 
   /* file:///C:/Users/... */
   wcscpy(url, L"file:///");
