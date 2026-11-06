@@ -1,0 +1,8 @@
+node_modules/
+web/dist/
+android/build/
+android/tools/*.jar
+*.log
+.DS_Store
+android/keystore/*.p12
+android/keystore/*.jks
