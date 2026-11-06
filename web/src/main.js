@@ -38,6 +38,7 @@ function boot() {
   setTimeout(() => document.getElementById('boot')?.remove(), 1100);
   // Debug/test hook: ?auto=<gameId>&n=4 runs a bots-only match (used by automated tests)
   const q = new URLSearchParams(location.search);
+  if (q.get('speed')) save.settings.speed = parseFloat(q.get('speed'));
   if (q.get('auto')) {
     import('./games/registry.js').then(({ GAMES }) => {
       const def = GAMES.find((g) => g.id === q.get('auto'));

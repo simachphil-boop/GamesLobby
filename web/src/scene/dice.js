@@ -34,7 +34,7 @@ export function makeDie(size = 0.13, body = '#f8f4ec', pip = '#1a1430') {
   return m;
 }
 
-/** Animate dice from `from` to rest positions showing values. */
+/** Animate dice from `from` to rest positions (same parent space, y = resting center) showing values. */
 export async function rollDice(dice, values, from, restPositions) {
   sfx('dice');
   const starts = dice.map(() => from.clone().add(new THREE.Vector3((Math.random() - 0.5) * 0.2, 0.25, (Math.random() - 0.5) * 0.2)));
@@ -46,7 +46,7 @@ export async function rollDice(dice, values, from, restPositions) {
       const p = starts[i].clone().lerp(end, e);
       // bounces
       const bounce = Math.abs(Math.sin(raw * Math.PI * 2.5)) * (1 - raw) * 0.35;
-      p.y = TABLE_Y + s / 2 + bounce + (1 - e) * 0.2;
+      p.y = end.y + bounce + (1 - e) * 0.2; // rest positions are in the dice parent's space
       d.position.copy(p);
       const r = UP_ROT[values[i]];
       const k = 1 - e;

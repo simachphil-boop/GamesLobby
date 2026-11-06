@@ -33,7 +33,9 @@ export class Labels {
     for (const it of [...this.items]) {
       it.age += dt;
       if (it.age > it.life) { this.remove(it); continue; }
-      const s = this.engine.toScreen(it.anchor());
+      let s = this.engine.toScreen(it.anchor());
+      // the viewer's own (hidden, first-person) character speaks from the bottom of the screen
+      if (it.owner && !it.owner.root.visible) s = { x: window.innerWidth / 2, y: window.innerHeight * 0.72, visible: true };
       const rise = it.rise ? it.age * 40 : 0;
       it.el.style.transform = `translate(${s.x}px, ${s.y - rise}px) translate(-50%, -100%)`;
       it.el.style.opacity = s.visible ? String(Math.min(1, (it.life - it.age) * 3, it.age * 8)) : '0';
