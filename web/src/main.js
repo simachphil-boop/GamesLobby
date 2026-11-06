@@ -12,7 +12,7 @@ import { commit, save } from './core/store.js';
 import { bus } from './core/events.js';
 import { t, setLang } from './i18n/index.js';
 
-window.BV_VERSION = '1.0.0';
+window.BV_VERSION = '1.1.0';
 function boot() {
   const bar = document.querySelector('.boot-bar i');
   if (bar) bar.style.width = '40%';

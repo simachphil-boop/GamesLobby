@@ -31,7 +31,7 @@ export function character(app) {
     for (const it of list) {
       const own = owns(cat, it.id);
       const el = h('div', { class: 'opt' + (av[key] === it.id ? ' sel' : '') + (own ? '' : ' locked') },
-        (own ? '' : '🔒 ') + t(`item.${cat}.${it.id}`) + (own ? '' : ` · ${it.price}`));
+        t(`item.${cat}.${it.id}`), own ? null : h('span', { class: 'price' }, ` · ⓒ${it.price}`));
       el.addEventListener('click', async () => {
         if (!own) {
           if (it.unlock && it.price === 0) { toast(t('col.unlockBy', { ach: t('ach.' + it.unlock + '.name') })); return; }
@@ -48,8 +48,10 @@ export function character(app) {
   };
   const field = (label, el) => h('div', { class: 'field' }, h('label', null, label), el);
   const tabs = h('div', { class: 'tabs' });
+  const wallet = h('span', null, '');
   const render = () => {
     tabs.innerHTML = '';
+    wallet.textContent = save.profile.coins.toLocaleString();
     for (const k of ['look', 'style', 'extras']) {
       const el = h('div', { class: 'tab' + (k === tab ? ' on' : '') }, t('char.tab.' + k));
       el.addEventListener('click', () => { sfx('click'); tab = k; render(); });
@@ -101,7 +103,9 @@ export function character(app) {
     }
   };
   render();
-  const el = screen('', header(t('char.title')), h('div', { class: 'grow passthrough' }), tabs, panel);
+  panel.style.maxHeight = 'none';
+  const el = screen('charscr', header(t('char.title'), null, h('div', { class: 'chip' }, h('i', { class: 'coin' }), wallet)),
+    h('div', { class: 'cpanel' }, tabs, h('div', { class: 'mini', style: { padding: '0 4px' } }, t('char.shopHint')), panel));
   return {
     el,
     onShow: () => { app.rig.setCinematic('character'); setTimeout(() => app.lobbyAvatar()?.emote('wave'), 900); },

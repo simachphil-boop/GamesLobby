@@ -190,3 +190,56 @@ export function cardFaceTexture(deck, text) {
     lines.forEach((l, j) => g.fillText(l, w / 2, 110 + j * 30));
   });
 }
+
+// ---------- 3D city decor (center of the board) and buildings ----------
+function windowsTex(base, lit, key) {
+  return canvasTexture(64, 128, (g, w, h) => {
+    g.fillStyle = base; g.fillRect(0, 0, w, h);
+    for (let y = 6; y < h - 6; y += 12) for (let x = 6; x < w - 6; x += 14) {
+      g.fillStyle = Math.sin(x * 12.9 + y * 78.2) > -0.2 ? lit : 'rgba(0,0,0,0.35)'; g.fillRect(x, y, 8, 7);
+    }
+  }, { key });
+}
+const bmat = new Map();
+function buildingMat(base, lit) {
+  const k = base + lit;
+  if (!bmat.has(k)) {
+    const tex = windowsTex(base, lit, 'win' + k);
+    bmat.set(k, new THREE.MeshStandardMaterial({ map: tex, emissiveMap: tex, emissive: '#ffffff', emissiveIntensity: 0.55, roughness: 0.5 }));
+  }
+  return bmat.get(k);
+}
+export function makeTower(h, base = '#3a5ab8', lit = '#ffe08a', w = 0.05) {
+  const g = new THREE.Group();
+  const body = new THREE.Mesh(new THREE.BoxGeometry(w, h, w), buildingMat(base, lit));
+  body.position.y = h / 2; body.castShadow = true; g.add(body);
+  const cap = new THREE.Mesh(new THREE.BoxGeometry(w * 1.1, 0.008, w * 1.1), new THREE.MeshStandardMaterial({ color: '#e8e0d0', roughness: 0.4 }));
+  cap.position.y = h + 0.004; g.add(cap);
+  if (h > 0.15) { const spire = new THREE.Mesh(new THREE.ConeGeometry(w * 0.25, h * 0.25, 6), new THREE.MeshStandardMaterial({ color: '#d9c070', metalness: 0.8, roughness: 0.3 })); spire.position.y = h + h * 0.125; g.add(spire); }
+  return g;
+}
+export function makeTree(s = 1) {
+  const g = new THREE.Group();
+  const trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.004 * s, 0.005 * s, 0.02 * s, 6), new THREE.MeshStandardMaterial({ color: '#6a4424' }));
+  trunk.position.y = 0.01 * s;
+  const crown = new THREE.Mesh(new THREE.ConeGeometry(0.018 * s, 0.05 * s, 8), new THREE.MeshStandardMaterial({ color: '#2f8a4a', roughness: 0.8 }));
+  crown.position.y = 0.045 * s; crown.castShadow = true;
+  g.add(trunk, crown);
+  return g;
+}
+export function makeCityDecor(theme) {
+  const th = boardTheme(theme);
+  const g = new THREE.Group();
+  const palettes = th.dark ? [['#1a2050', '#7af0ff'], ['#2a1450', '#ff9af0'], ['#14243a', '#ffe08a']] : [['#3a5ab8', '#ffe08a'], ['#c8b090', '#fff2c0'], ['#5a6a8a', '#bfe6ff']];
+  // skyline cluster around the logo, leaving the deck spots free
+  const spots = [[-0.12, 0.2, 0.3], [0.0, 0.26, 0.22], [0.1, 0.18, 0.26], [-0.22, 0.05, 0.16], [0.22, -0.06, 0.18], [0.16, -0.22, 0.12], [-0.05, -0.24, 0.14], [-0.2, -0.16, 0.1]];
+  spots.forEach(([x, z, h], i) => { const [b, l] = palettes[i % palettes.length]; const t = makeTower(h, b, l, 0.045 + (i % 3) * 0.01); t.position.set(x, 0, z); t.rotation.y = i * 0.4; g.add(t); });
+  for (let i = 0; i < 10; i++) { const a = i * 0.63, r = 0.33 + (i % 3) * 0.03; const tr = makeTree(0.9 + (i % 3) * 0.2); tr.position.set(Math.cos(a) * r, 0, Math.sin(a) * r * 0.9); if (Math.abs(Math.cos(a) * r + Math.sin(a) * r) > 0.5) continue; g.add(tr); }
+  // gold landmark in the middle
+  const gold = new THREE.MeshStandardMaterial({ color: '#ffcf4a', metalness: 0.85, roughness: 0.25, emissive: '#5a3a00', emissiveIntensity: 0.3 });
+  const plinth = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.06, 0.02, 24), gold); plinth.position.y = 0.01;
+  const obel = new THREE.Mesh(new THREE.CylinderGeometry(0.012, 0.022, 0.16, 4), gold); obel.position.y = 0.1; obel.rotation.y = Math.PI / 4;
+  g.add(plinth, obel);
+  g.traverse((o) => { if (o.isMesh) o.castShadow = true; });
+  return g;
+}

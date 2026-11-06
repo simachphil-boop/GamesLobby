@@ -6,3 +6,4 @@ android/tools/*.jar
 .DS_Store
 android/keystore/*.p12
 android/keystore/*.jks
+pc/build/

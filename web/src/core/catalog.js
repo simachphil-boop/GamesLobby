@@ -19,18 +19,18 @@ export const ROOMS = [
   { id: 'retro', price: 300 }, { id: 'future', price: 450 }, { id: 'casino', price: 500, unlock: 'master_player' },
 ];
 export const OUTFITS = [
-  { id: 'tshirt', price: 0 }, { id: 'hoodie', price: 0 }, { id: 'sweater', price: 0 }, { id: 'jacket', price: 100 },
+  { id: 'tshirt', price: 0 }, { id: 'hoodie', price: 0 }, { id: 'sweater', price: 80 }, { id: 'jacket', price: 150 },
   { id: 'suit', price: 200 }, { id: 'dress', price: 150 }, { id: 'tracksuit', price: 120 }, { id: 'royal', price: 400, unlock: 'collector' },
 ];
 export const HAIRS = [
-  { id: 'short', price: 0 }, { id: 'bob', price: 0 }, { id: 'long', price: 0 }, { id: 'bun', price: 0 },
-  { id: 'spiky', price: 0 }, { id: 'curly', price: 0 }, { id: 'ponytail', price: 50 }, { id: 'mohawk', price: 100 },
+  { id: 'short', price: 0 }, { id: 'bob', price: 0 }, { id: 'long', price: 0 }, { id: 'bun', price: 60 },
+  { id: 'spiky', price: 60 }, { id: 'curly', price: 0 }, { id: 'ponytail', price: 80 }, { id: 'mohawk', price: 150 },
   { id: 'bald', price: 0 },
 ];
 export const ACCESSORIES = [
-  { id: 'none', price: 0 }, { id: 'glasses', price: 0 }, { id: 'sunglasses', price: 80 }, { id: 'cap', price: 60 },
-  { id: 'hat', price: 120 }, { id: 'beanie', price: 60 }, { id: 'headphones', price: 150 }, { id: 'bow', price: 60 },
-  { id: 'earrings', price: 90 }, { id: 'crown', price: 500, unlock: 'first_win' },
+  { id: 'none', price: 0 }, { id: 'glasses', price: 100 }, { id: 'sunglasses', price: 150 }, { id: 'cap', price: 120 },
+  { id: 'hat', price: 220 }, { id: 'beanie', price: 120 }, { id: 'headphones', price: 250 }, { id: 'bow', price: 100 },
+  { id: 'earrings', price: 160 }, { id: 'crown', price: 500, unlock: 'first_win' },
 ];
 export const EMOTES = [
   { id: 'wave', price: 0 }, { id: 'laugh', price: 0 }, { id: 'thumbs', price: 0 }, { id: 'think', price: 0 },

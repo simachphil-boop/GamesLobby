@@ -1,7 +1,7 @@
 // Room System: six procedurally built interiors around the same playing table.
 import * as THREE from 'three';
 import {
-  woodTexture, marbleTexture, feltTexture, tileTexture, carpetTexture, gridTexture, wallTexture,
+  canvasTexture, woodTexture, marbleTexture, feltTexture, tileTexture, carpetTexture, gridTexture, wallTexture,
   skylineTexture, artTexture, glowTexture, textTexture,
 } from './textures.js';
 import { disposeTree } from './engine.js';
@@ -25,10 +25,10 @@ export function seatPosition(angle, r = SEAT_R) {
 }
 
 export const ROOM_THEMES = {
-  modern: {
-    floor: () => woodTexture('#b08a64', '#6a4a30', 'floor-modern', 8), wall: () => wallTexture('#d9dde8', '#9aa3c0', 'panels'),
-    wallColor: '#e4e7f0', table: 'square', tableTop: () => woodTexture('#5b3a22', '#2e1a0c', 'tt-modern', 4), trim: '#2a2f45',
-    felt: '#23345e', chair: '#2b3150', accent: '#5aa0ff', night: false, ambient: 0.75, key: 1.6, warm: '#fff1dc', fog: '#cfd6e6',
+  modern: { // evening game lounge (default)
+    floor: () => woodTexture('#5a3a24', '#2a170c', 'floor-lounge', 8), wall: () => wallTexture('#3a2638', '#c89aff', 'panels', 'wall-lounge'),
+    wallColor: '#3a2638', table: 'square', tableTop: () => woodTexture('#8a5530', '#4a2a12', 'tt-lounge', 4), trim: '#e0b060',
+    felt: '#3a2a6a', chair: '#4a3488', accent: '#b07aff', night: true, ambient: 0.6, key: 1.35, warm: '#ffcf9a', fog: '#1c1220', neon: true, lounge: true,
   },
   luxury: {
     floor: () => marbleTexture('#efe9df', '#b9a98a', 'floor-lux'), wall: () => wallTexture('#3a1830', '#d9b25a', 'damask'),
@@ -104,7 +104,7 @@ export class Room {
     fill.position.set(-3, 2.6, -3);
     g.add(fill);
     if (this.engine.q.lights >= 2) {
-      const pend = new THREE.PointLight(th.warm, 5, 5, 1.8);
+      const pend = new THREE.PointLight(th.warm, 2.2, 5, 1.8);
       pend.position.set(0, 2.4, 0);
       g.add(pend);
     }
@@ -137,19 +137,20 @@ export class Room {
     }
 
     // --- window with city view (behind the opponents, visible in first person) ---
-    this.addWindow(g, th, 0, -W + 0.02, 0);
+    // back wall: city window on the left, neon sign on the right (shelves frame both)
+    this.addWindow(g, th, th.neon ? -2.1 : 0, -W + 0.02, 0, th.neon ? 3.2 : 3.6);
     this.addWindow(g, th, -W + 0.02, -2.2, Math.PI / 2, 2.2);
 
     // --- rug ---
-    const rug = new THREE.Mesh(new THREE.CircleGeometry(3.1, 48), M({ map: carpetTexture(th.felt, th.trim, 'rug' + themeId), roughness: 1 }));
+    const rug = new THREE.Mesh(new THREE.CircleGeometry(3.1, 48), M({ map: carpetTexture(th.felt, th.lounge ? '#4a3a7a' : th.trim, 'rug' + themeId), roughness: 1 }));
     rug.rotation.x = -Math.PI / 2; rug.position.y = 0.005; rug.receiveShadow = true; g.add(rug);
 
     // --- table ---
     this.addTable(g, th);
 
     // --- decor ---
-    this.addShelf(g, th, -3.6, -W + 0.35, 0);
-    this.addShelf(g, th, 3.6, -W + 0.35, 0);
+    this.addShelf(g, th, th.neon ? -4.9 : -3.6, -W + 0.35, 0);
+    this.addShelf(g, th, th.neon ? 4.4 : 3.6, -W + 0.35, 0);
     this.addShelf(g, th, W - 0.35, 2.0, -Math.PI / 2);
     this.addPlant(g, -5.6, -5.6, 1.2); this.addPlant(g, 5.6, -5.6, 1.0); this.addPlant(g, 5.6, 5.4, 1.3); this.addPlant(g, -5.6, 5.0, 0.9);
     this.addPainting(g, th, W - 0.03, -2.6, -Math.PI / 2, 1);
@@ -347,7 +348,7 @@ export class Room {
       M({ color: '#fff4dd', emissive: th.warm, emissiveIntensity: 0.9, side: THREE.DoubleSide, roughness: 1 }));
     shade.position.y = 1.65;
     grp.add(base, pole, shade);
-    const glow = new THREE.Sprite(new THREE.SpriteMaterial({ map: glowTexture('#ffd9a0'), transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, opacity: 0.6 }));
+    const glow = new THREE.Sprite(new THREE.SpriteMaterial({ map: glowTexture('#ffd9a0'), transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, opacity: 0.3 }));
     glow.scale.set(1.4, 1.4, 1); glow.position.y = 1.65; grp.add(glow);
     grp.position.set(x, 0, z);
     g.add(grp);
@@ -435,9 +436,18 @@ export class Room {
       strip.position.set(x, 3.2, z); strip.rotation.y = ry; g.add(strip);
       const strip2 = strip.clone(); strip2.position.y = 0.3; g.add(strip2);
     }
-    const signTex = textTexture('BOARDVERSE', { w: 1024, h: 192, font: 'bold 120px sans-serif', color: '#fff', glow: th.accent });
-    const sign = new THREE.Mesh(new THREE.PlaneGeometry(3.2, 0.6), new THREE.MeshBasicMaterial({ map: signTex, transparent: true }));
-    sign.position.set(0, 3.0, -6.9); g.add(sign);
+    const signTex = canvasTexture(1024, 420, (c, w, h) => {
+      // gold crown over a neon wordmark
+      c.save(); c.translate(w / 2, 110); c.shadowColor = '#ffb02a'; c.shadowBlur = 28; c.fillStyle = '#ffd36a';
+      c.beginPath(); c.moveTo(-90, 60); c.lineTo(-100, -20); c.lineTo(-50, 20); c.lineTo(0, -60); c.lineTo(50, 20); c.lineTo(100, -20); c.lineTo(90, 60); c.closePath(); c.fill();
+      c.fillRect(-92, 66, 184, 20); c.restore();
+      c.font = '900 150px sans-serif'; c.textAlign = 'center'; c.textBaseline = 'middle';
+      c.shadowColor = th.accent; c.shadowBlur = 40; c.lineWidth = 10; c.strokeStyle = th.accent; c.strokeText('BOARDVERSE', w / 2, 300);
+      c.shadowBlur = 16; c.fillStyle = '#f4e8ff'; c.fillText('BOARDVERSE', w / 2, 300);
+    });
+    const sign = new THREE.Mesh(new THREE.PlaneGeometry(3.4, 1.4), new THREE.MeshBasicMaterial({ map: signTex, transparent: true, toneMapped: false }));
+    sign.position.set(1.5, 2.2, -6.9); g.add(sign);
+    const signLight = new THREE.PointLight(th.accent, 3, 5, 2); signLight.position.set(1.5, 2.2, -6.2); g.add(signLight);
     if (themeId === 'future') {
       const holo = new THREE.Mesh(new THREE.TorusGeometry(1.0, 0.012, 6, 64), new THREE.MeshBasicMaterial({ color: '#5af0ff', transparent: true, opacity: 0.6 }));
       holo.rotation.x = Math.PI / 2; holo.position.y = 2.4; g.add(holo);

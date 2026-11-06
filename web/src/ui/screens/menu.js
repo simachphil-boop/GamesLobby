@@ -7,40 +7,52 @@ import { bus } from '../../core/events.js';
 import { GAMES } from '../../games/registry.js';
 import { PERSONAS } from '../../bots/personas.js';
 import { shuffleInPlace } from '../../core/util.js';
+import { renderPortrait } from '../../scene/portrait.js';
+import { sfx } from '../../core/audio.js';
 
 export function topBar(app) {
   const p = save.profile;
   const xp = Math.round((p.xp / xpForLevel(p.level)) * 100);
-  const prof = h('div', { class: 'chip', style: { cursor: 'pointer' } },
-    h('div', { class: 'dot' }, p.name.slice(0, 1).toUpperCase()),
-    h('div', { class: 'col', style: { gap: '3px' } }, h('div', null, p.name, ' ', h('span', { class: 'gold' }, `· ${t('level')} ${p.level}`)), h('div', { class: 'xpbar' }, h('i', { style: { width: xp + '%' } }))));
-  prof.addEventListener('click', () => show(app.screens.profile, app));
-  const coins = h('div', { class: 'chip', style: { paddingLeft: '10px' } }, h('i', { class: 'coin' }), ' ', p.coins.toLocaleString());
-  return h('div', { class: 'menu-top' }, prof, coins);
+  const av = app.lobbyAvatar?.();
+  let src = '';
+  try { if (av) src = renderPortrait(app.engine, av); } catch (e) { /* ignore */ }
+  const card = h('div', { class: 'pcard interactive' },
+    h('img', { class: 'portrait', src, alt: '' }),
+    h('div', { class: 'col', style: { gap: '3px' } },
+      h('div', { class: 'pname' }, p.name),
+      h('div', { class: 'plv' }, '⭐ ' + t('level') + ' ' + p.level),
+      h('div', { class: 'xpbar' }, h('i', { style: { width: xp + '%' } })),
+      h('div', { class: 'pcoins' }, h('i', { class: 'coin' }), p.coins.toLocaleString(), h('span', { class: 'plus' }, '+'))));
+  card.addEventListener('click', (e) => { if (e.target.classList.contains('plus')) show(app.screens.daily, app); else show(app.screens.profile, app); });
+  return card;
 }
 
 export function mainMenu(app) {
   const ds = dailyStatus();
   const m = save.match;
   const gdef = m && GAMES.find((g) => g.id === m.gameId);
-  const grid = h('div', { class: 'menu-grid' },
-    gdef ? btn(h('span', null, '▶ ' + t('menu.continueOf', { game: t('game.' + gdef.id + '.name') })), () => app.resumeMatch(), 'good continue') : null,
-    btn(h('span', null, t('menu.play')), () => show(modeSelect, app), 'primary play'),
-    btn([h('span', { class: 'ico' }, '📚'), t('menu.library')], () => show(app.screens.library, app, 'bots')),
-    btn([h('span', { class: 'ico' }, '🧑'), t('menu.character')], () => show(app.screens.character, app)),
-    btn([h('span', { class: 'ico' }, '💎'), t('menu.collection')], () => show(app.screens.collection, app)),
-    btn([h('span', { class: 'ico' }, '🌐'), t('menu.online')], () => show(app.screens.online, app)),
-    btn([h('span', { class: 'ico' }, '🎁'), t('menu.daily'), ds.canClaim ? h('span', { class: 'badge' }, '!') : null], () => show(app.screens.daily, app)),
-    btn([h('span', { class: 'ico' }, '⚙️'), t('menu.settings')], () => show(app.screens.settings, app)),
-  );
-  const el = screen('menu', topBar(app),
-    h('div', { class: 'menu-body' },
-      h('div', { class: 'col', style: { alignItems: 'center', gap: '6px' } },
-        h('div', { class: 'logo' }, h('span', null, 'BOARD'), h('b', null, 'VERSE')),
-        h('div', { class: 'tagline' }, t('menu.tagline'))),
-      grid),
-    h('div', { class: 'menu-foot' }, 'BOARDVERSE · v' + (window.BV_VERSION || '1.0')));
-  const off = bus.on('profile', () => { const nt = topBar(app); el.firstChild.replaceWith(nt); });
+  const ibtn = (ic, label, fn, badge) => { const b = h('div', { class: 'ibtn interactive' }, h('div', { class: 'ic' }, ic), h('div', { class: 'lbl' }, label), badge ? h('span', { class: 'badge' }, '!') : null); b.addEventListener('click', () => { sfx('click'); fn(); }); return b; };
+  const mb = (ico, label, fn, cls = '') => btn([h('span', { class: 'ico' }, ico), h('span', null, label)], fn, 'mbtn ' + cls);
+  const tl = h('div', { class: 'tl' }, topBar(app));
+  const side = h('div', { class: 'side' },
+    h('div', { class: 'logo' }, h('span', null, 'BOARD'), h('b', null, 'VERSE')),
+    h('div', { class: 'tagline' }, t('menu.tagline')),
+    gdef ? mb('▶', t('menu.continueOf', { game: t('game.' + gdef.id + '.name') }), () => app.resumeMatch(), 'good') : null,
+    btn(t('menu.play'), () => show(modeSelect, app), 'primary play'),
+    h('div', { class: 'grid2 col', style: { gap: '10px' } },
+      mb('📚', t('menu.library'), () => show(app.screens.library, app, 'bots')),
+      mb('🧑‍🎨', t('menu.character'), () => show(app.screens.character, app)),
+      mb('💎', t('menu.collection'), () => show(app.screens.collection, app)),
+      mb('🌐', t('menu.online'), () => show(app.screens.online, app))));
+  const tr = h('div', { class: 'tr ibtns' },
+    ibtn('🏆', t('prof.achievements'), () => show(app.screens.profile, app)),
+    ibtn('🎁', t('menu.rewards'), () => show(app.screens.daily, app), ds.canClaim),
+    ibtn('⚙️', t('set.title'), () => show(app.screens.settings, app)),
+    window.BoardverseNative ? ibtn('🚪', t('menu.exit'), () => window.BoardverseNative.exitApp()) : null);
+  const el = h('div', { class: 'screen menu2' }, tl, tr, side, h('div', { class: 'foot' }, 'BOARDVERSE v' + (window.BV_VERSION || '1.1')));
+  const off = bus.on('profile', () => { tl.innerHTML = ''; tl.appendChild(topBar(app)); });
+  // portrait needs the lobby characters to be in the scene
+  setTimeout(() => { tl.innerHTML = ''; tl.appendChild(topBar(app)); }, 120);
   return {
     el, onHide: off,
     onShow: () => { app.rig.setCinematic('menu'); },

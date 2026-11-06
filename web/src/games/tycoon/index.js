@@ -3,7 +3,7 @@ import * as THREE from 'three';
 import * as rules from './rules.js';
 import * as ai from './ai.js';
 import { TILES, GROUPS, RAILS, UTILS, boardTheme, tileName, isProperty, groupOf, EVENT_CARDS, FUND_CARDS, BOARD_IDS } from './boards.js';
-import { BOARD, U, CORNER, tileCenter, inward, along, sideOf, tileAt, drawBoardTexture, cardBackTexture, cardFaceTexture } from './board3d.js';
+import { BOARD, U, CORNER, tileCenter, inward, along, sideOf, tileAt, drawBoardTexture, cardBackTexture, cardFaceTexture, makeCityDecor, makeTower } from './board3d.js';
 import { makeToken, TOKEN_IDS } from '../tokens.js';
 import { ViewBase, arcMove, std, V3 } from '../common.js';
 import { makeDie, rollDice } from '../../scene/dice.js';
@@ -20,7 +20,7 @@ registerStrings({
     'tyc.board': 'Board', 'tyc.token': 'Your token', 'tyc.variant': 'Rule set', 'tyc.duration': 'Match length',
     'tyc.v.classic': 'Classic', 'tyc.v.jackpot': 'Jackpot rest stop', 'tyc.v.speed': 'Speed start',
     'tyc.d.short': 'Short · 20 rounds', 'tyc.d.medium': 'Medium · 40 rounds', 'tyc.d.full': 'Until one remains',
-    'tyc.roll': '🎲 ROLL', 'tyc.buy': 'Buy · ${n}', 'tyc.auction': 'Auction', 'tyc.manage': '🏠 Properties', 'tyc.trade': '🤝 Trade',
+    'tyc.roll': '🎲 Roll Dice', 'tyc.buy': 'Buy · ${n}', 'tyc.auction': 'Auction', 'tyc.manage': '🏠 Properties', 'tyc.trade': '🤝 Trade',
     'tyc.end': 'End turn ➜', 'tyc.payJail': 'Pay ${n}', 'tyc.useCard': 'Use pass', 'tyc.rollJail': '🎲 Roll for doubles',
     'tyc.bankrupt': 'Declare bankruptcy', 'tyc.pass': 'Pass',
     'tyc.st.roll': 'Roll the dice', 'tyc.st.buy': 'Buy {name}?', 'tyc.st.end': 'Build, trade or end your turn',
@@ -46,7 +46,7 @@ registerStrings({
     'tyc.board': 'Игровое поле', 'tyc.token': 'Ваша фишка', 'tyc.variant': 'Набор правил', 'tyc.duration': 'Длительность',
     'tyc.v.classic': 'Классика', 'tyc.v.jackpot': 'Джекпот на отдыхе', 'tyc.v.speed': 'Быстрый старт',
     'tyc.d.short': 'Короткая · 20 кругов', 'tyc.d.medium': 'Средняя · 40 кругов', 'tyc.d.full': 'До последнего игрока',
-    'tyc.roll': '🎲 БРОСОК', 'tyc.buy': 'Купить · ${n}', 'tyc.auction': 'Аукцион', 'tyc.manage': '🏠 Имущество', 'tyc.trade': '🤝 Обмен',
+    'tyc.roll': '🎲 Бросить', 'tyc.buy': 'Купить · ${n}', 'tyc.auction': 'Аукцион', 'tyc.manage': '🏠 Имущество', 'tyc.trade': '🤝 Обмен',
     'tyc.end': 'Завершить ход ➜', 'tyc.payJail': 'Заплатить ${n}', 'tyc.useCard': 'Пропуск', 'tyc.rollJail': '🎲 Бросить на дубль',
     'tyc.bankrupt': 'Объявить банкротство', 'tyc.pass': 'Пас',
     'tyc.st.roll': 'Бросьте кубики', 'tyc.st.buy': 'Купить «{name}»?', 'tyc.st.end': 'Стройте, торгуйтесь или завершите ход',
@@ -78,13 +78,15 @@ class View extends ViewBase {
     this.th = boardTheme(s.board);
     const tex = drawBoardTexture(s.board, L() === 'ru' ? 'ru' : 'en');
     const side = std(this.th.dark ? '#1a1e3a' : '#5a3a20');
-    const top = new THREE.MeshStandardMaterial({ map: tex, roughness: 0.55 });
+    const top = new THREE.MeshStandardMaterial({ map: tex, roughness: 0.6, color: '#d2cdc6' });
     this.boardMesh = new THREE.Mesh(new THREE.BoxGeometry(BOARD, 0.03, BOARD), [side, side, top, side, side, side]);
     this.boardMesh.position.y = 0.015;
     this.boardMesh.receiveShadow = true;
     this.group.add(this.boardMesh);
     this.pickables.push(this.boardMesh);
     this.Y = 0.031;
+    // 3D skyline in the middle of the board
+    this.city = makeCityDecor(s.board); this.city.position.y = this.Y; this.group.add(this.city);
     // decks
     this.decks = {};
     for (const [deck, x, z] of [['event', -0.36, -0.36], ['fund', 0.36, 0.36]]) {
@@ -112,7 +114,7 @@ class View extends ViewBase {
     this.tileLayer = new THREE.Group(); this.group.add(this.tileLayer);
     this.cashPiles = this.ctx.seats.map(() => null);
     this.billGeo = new THREE.BoxGeometry(0.13, 0.005, 0.065);
-    this.billMat = std(this.th.dark ? '#4ad8a0' : '#6ac87a', { roughness: 0.8, metalness: 0 });
+    this.billMats = ['#f4a6c0', '#8ab8ff', '#f4dc7a', '#8ad8a0', '#c8a0ff'].map((c) => std(c, { roughness: 0.8, metalness: 0 }));
     this.houseGeo = new THREE.BoxGeometry(0.026, 0.022, 0.026);
     this.roofGeo = new THREE.ConeGeometry(0.022, 0.018, 4); this.roofGeo.rotateY(Math.PI / 4);
     this.hotelGeo = new THREE.BoxGeometry(0.06, 0.03, 0.032);
@@ -183,16 +185,16 @@ class View extends ViewBase {
     const base = V3(c.x + nn.x * band, this.Y, c.y + nn.y * band);
     const meshes = [];
     if (n === 5) {
-      const ht = new THREE.Mesh(this.hotelGeo, std('#e0303a'));
+      const ht = makeTower(0.11, '#b8303a', '#ffe08a', 0.045);
       ht.rotation.y = this.facing(i);
-      ht.position.copy(base).add(V3(0, 0.015, 0));
+      ht.position.copy(base);
       meshes.push(ht);
     } else {
       for (let k = 0; k < n; k++) {
         const off = (k - (n - 1) / 2) * 0.03;
         const g = new THREE.Group();
-        const body = new THREE.Mesh(this.houseGeo, std('#2fb35a')); body.position.y = 0.011;
-        const roof = new THREE.Mesh(this.roofGeo, std('#1f8a40')); roof.position.y = 0.031;
+        const body = new THREE.Mesh(this.houseGeo, std('#f4ead8')); body.position.y = 0.011;
+        const roof = new THREE.Mesh(this.roofGeo, std(TILES[i].type === 'street' ? this.th.colors[TILES[i].g] : '#c0392b')); roof.position.y = 0.031;
         g.add(body, roof);
         g.position.set(base.x + a.x * off, this.Y, base.z + a.y * off);
         g.rotation.y = this.facing(i);
@@ -212,25 +214,30 @@ class View extends ViewBase {
   }
 
   renderCash(s) {
+    // stacks of different-colored banknotes in front of each player, height follows cash
     s.players.forEach((p, i) => {
-      if (this.cashPiles[i]) { this.group.remove(this.cashPiles[i]); this.cashPiles[i].dispose(); }
-      const n = p.out ? 0 : Math.max(0, Math.min(40, Math.round(p.cash / 75)));
-      const im = new THREE.InstancedMesh(this.billGeo, this.billMat, Math.max(1, n));
-      im.count = n;
+      if (this.cashPiles[i]) { this.group.remove(this.cashPiles[i]); this.cashPiles[i].traverse((o) => o.dispose?.()); }
+      const grp = new THREE.Group();
       const base = this.seatEdge(i);
       const ang = this.ctx.seats[i].angle;
+      const total = p.out ? 0 : Math.max(0, p.cash);
+      const side = V3(Math.cos(ang), 0, -Math.sin(ang));
       const m4 = new THREE.Matrix4(), q = new THREE.Quaternion();
-      for (let k = 0; k < n; k++) {
-        const stack = k % 2, lvl = Math.floor(k / 2);
-        const side = V3(Math.cos(ang), 0, -Math.sin(ang)).multiplyScalar(stack ? 0.08 : -0.08);
-        q.setFromEuler(new THREE.Euler(0, ang + ((k * 37) % 9 - 4) * 0.02, 0));
-        m4.compose(base.clone().add(side).add(V3(0, 0.003 + lvl * 0.0055, 0)), q, V3(1, 1, 1));
-        im.setMatrixAt(k, m4);
-      }
-      im.castShadow = true;
-      im.instanceMatrix.needsUpdate = true;
-      this.group.add(im);
-      this.cashPiles[i] = im;
+      this.billMats.forEach((mat, k) => {
+        const n = Math.max(0, Math.min(10, Math.round((total / 5) / 60 - k * 0.6)));
+        const im = new THREE.InstancedMesh(this.billGeo, mat, Math.max(1, n));
+        im.count = n;
+        const off = side.clone().multiplyScalar((k - 2) * 0.075);
+        for (let j = 0; j < n; j++) {
+          q.setFromEuler(new THREE.Euler(0, ang + ((j * 37 + k * 11) % 9 - 4) * 0.02, 0));
+          m4.compose(base.clone().add(off).add(V3(0, 0.003 + j * 0.0055, (k % 2) * 0.02)), q, V3(0.62, 1, 1));
+          im.setMatrixAt(j, m4);
+        }
+        im.castShadow = true; im.instanceMatrix.needsUpdate = true;
+        grp.add(im);
+      });
+      this.group.add(grp);
+      this.cashPiles[i] = grp;
     });
   }
 

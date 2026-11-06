@@ -72,16 +72,19 @@ export class CameraRig {
     const a = this.seatAngle;
     const portrait = this.engine.portrait;
     if (this.cinematic === 'menu') {
-      const yaw = t * 0.05;
-      const r = portrait ? 5.2 : 4.4;
-      return { pos: new THREE.Vector3(Math.sin(yaw) * r, 2.3, Math.cos(yaw) * r), target: new THREE.Vector3(0, 1.0, 0) };
+      // gentle drift around the far side of the table so the bots' faces are visible
+      const yaw = Math.sin(t * 0.06) * 0.5;
+      const r = portrait ? 4.6 : 3.3;
+      return { pos: new THREE.Vector3(Math.sin(yaw) * r, portrait ? 2.6 : 2.05, Math.cos(yaw) * r), target: new THREE.Vector3(0, portrait ? 1.2 : 1.0, -0.3) };
     }
     if (this.cinematic === 'character') {
       const av = seatPosition(0, SEAT_R);
       const yaw = this.yawOff;
-      const d = (portrait ? 1.55 : 1.15) * this.zoom;
-      const pos = new THREE.Vector3(av.x - Math.sin(yaw) * d, 1.25, av.z - Math.cos(yaw) * d);
-      return { pos, target: new THREE.Vector3(av.x, portrait ? 1.0 : 1.1, av.z) };
+      const d = (portrait ? 1.55 : 1.55) * this.zoom;
+      const pos = new THREE.Vector3(av.x - Math.sin(yaw) * d, 1.3, av.z - Math.cos(yaw) * d);
+      // landscape: aim to the avatar's side so it stands left of the editor panel
+      const side = portrait ? 0 : 0.5;
+      return { pos, target: new THREE.Vector3(av.x - Math.cos(yaw) * side, portrait ? 1.05 : 1.08, av.z + Math.sin(yaw) * side) };
     }
     if (this.cinematic === 'library') {
       return { pos: new THREE.Vector3(-1.2, 1.6, 2.9), target: new THREE.Vector3(-2.8, 1.2, -6.5) };
@@ -114,7 +117,17 @@ export class CameraRig {
     return { pos, target: center.clone().add(new THREE.Vector3(0, -0.05, 0)) };
   }
 
+  /** Shift the projection so the 3D scene sits beside side panels (menu: right, editor: left). */
+  applyViewOffset() {
+    const w = window.innerWidth, h = window.innerHeight;
+    const shift = w > h ? (this.cinematic === 'menu' ? -0.16 : 0) : 0;
+    if (shift === this._shift && w === this._vw) return;
+    this._shift = shift; this._vw = w;
+    if (shift) this.cam.setViewOffset(w, h, shift * w, 0, w, h); else this.cam.clearViewOffset();
+  }
+
   update(dt, t) {
+    this.applyViewOffset();
     // in third person the held cards shrink toward the bottom so they don't cover the table
     const tp = this.mode === 'tp' && !this.cinematic;
     const portrait = this.handRig.userData.portrait;

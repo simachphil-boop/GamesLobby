@@ -6,7 +6,8 @@ switch between **first-person** and **third-person** cameras, and play 10 fully 
 | | |
 |---|---|
 | **Android** | `dist/BOARDVERSE.apk` (Android 7.0+, signed with APK Signature Scheme v2) |
-| **PC / browser** | `dist/BOARDVERSE-PC.html` — a single self-contained file, double-click to play (Chrome/Edge/Firefox) |
+| **Windows PC** | `dist/BOARDVERSE.exe` — native launcher with the game embedded; opens in its own app window (uses Edge/Chrome, preinstalled on Windows 10/11); saves in `%LOCALAPPDATA%\BOARDVERSE` |
+| **Any browser** | `dist/BOARDVERSE-PC.html` — single self-contained file (Chrome/Edge/Firefox) |
 | **Online server** | `node server/relay.js [port]` (no dependencies) |
 
 ## Games (all with full rules, bots with 4 difficulty levels, animations)
@@ -44,11 +45,18 @@ android/   native WebView shell + SDK-free APK toolchain (apkpack.py writes bina
 ```
 Each game is an independent module; adding a game = new folder + one line in `games/registry.js`.
 
+## Audio
+- UI sounds: [uisfx](https://www.npmjs.com/package/uisfx) “studio” set — CC0 1.0 (`web/assets/audio/ui/LICENSE-CC0.txt`).
+- Table foley (dice, cards, chips, wood, coins, dominoes) and room ambiences: physically-modelled, rendered by `tools/audio/foley.py`.
+- Music: 6 original arrangements (`tools/audio/compose.py`) rendered with FluidSynth and the FluidR3_GM SoundFont (MIT).
+- Regenerate everything: `PY=<python with numpy+mido> tools/audio/build_audio.sh` (needs fluidsynth, fluid-soundfont-gm, ffmpeg).
+
 ## Build
 ```bash
 cd web && npm install && npm test        # rules tests (perft for chess, simulations for all games)
 npm run build                            # -> web/dist (APK assets) + boardverse-single.html (PC)
-cd .. && VERSION_CODE=10 VERSION_NAME=1.0.0 android/tools/build_apk.sh   # -> dist/BOARDVERSE.apk
+cd .. && VERSION_CODE=11 VERSION_NAME=1.1.0 android/tools/build_apk.sh   # -> dist/BOARDVERSE.apk
+SKIP_WEB=1 pc/build_exe.sh                                            # -> dist/BOARDVERSE.exe (needs mingw-w64)
 ```
 Needs Node 18+, JDK 17+, Python 3. The script downloads dx/apksig/android stubs from Maven Central.
 A signing key is generated at `android/keystore/boardverse.p12` (not committed). Keep it to ship updates

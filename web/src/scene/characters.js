@@ -80,12 +80,14 @@ function drawFace(g, expr, blink, lx, ly, eyeColor, lashes) {
   const W = 256;
   g.clearRect(0, 0, W, W);
   const e = EXPR[expr] || EXPR.neutral;
-  const cx = 128, ey = 112, sep = 40;
+  const cx = 128, ey = 112, sep = 42;
   const open = Math.max(0.05, (blink ? 0.08 : e.eye));
   // blush
-  if (e.blush) {
-    g.fillStyle = `rgba(255,90,110,${e.blush * 0.6})`;
-    for (const s of [-1, 1]) { g.beginPath(); g.ellipse(cx + s * 58, ey + 34, 18, 10, 0, 0, 7); g.fill(); }
+  for (const s of [-1, 1]) { // soft cheeks always, stronger when blushing
+    const bx = cx + s * 60, by2 = ey + 36;
+    const gr = g.createRadialGradient(bx, by2, 1, bx, by2, 22);
+    gr.addColorStop(0, `rgba(255,110,120,${0.18 + (e.blush || 0) * 0.5})`); gr.addColorStop(1, 'rgba(255,110,120,0)');
+    g.fillStyle = gr; g.beginPath(); g.arc(bx, by2, 22, 0, 7); g.fill();
   }
   for (const s of [-1, 1]) {
     const x = cx + s * sep;
@@ -103,23 +105,28 @@ function drawFace(g, expr, blink, lx, ly, eyeColor, lashes) {
       else { g.moveTo(x - 14, ey); g.lineTo(x + 14, ey); }
       g.stroke();
     } else {
-      const ry = 17 * open;
+      // big animated-film style eyes: white, gradient iris, pupil, two catchlights, lid line + lashes
+      const rx = 19, ry = 22 * open;
       g.fillStyle = '#ffffff';
-      g.beginPath(); g.ellipse(x, ey, 15, ry, 0, 0, 7); g.fill();
-      g.save(); g.beginPath(); g.ellipse(x, ey, 15, ry, 0, 0, 7); g.clip();
-      const px = x + lx * 6, py = ey + ly * 5 + oy;
-      g.fillStyle = eyeColor; g.beginPath(); g.arc(px, py, 10, 0, 7); g.fill();
-      g.fillStyle = '#120a08'; g.beginPath(); g.arc(px, py, 5.5, 0, 7); g.fill();
-      g.fillStyle = '#ffffff'; g.beginPath(); g.arc(px - 3.5, py - 4, 3, 0, 7); g.fill();
+      g.beginPath(); g.ellipse(x, ey, rx, ry, 0, 0, 7); g.fill();
+      g.save(); g.beginPath(); g.ellipse(x, ey, rx, ry, 0, 0, 7); g.clip();
+      g.fillStyle = 'rgba(120,90,140,0.18)'; g.fillRect(x - rx, ey - ry, rx * 2, ry * 0.45); // lid shadow
+      const px = x + lx * 6, py = ey + ly * 5 + oy + 2;
+      const ir = g.createRadialGradient(px, py + 5, 2, px, py, 15);
+      ir.addColorStop(0, '#ffffff'); ir.addColorStop(0.25, eyeColor); ir.addColorStop(1, '#1a0e0a');
+      g.fillStyle = ir; g.beginPath(); g.arc(px, py, 14, 0, 7); g.fill();
+      g.fillStyle = '#0a0606'; g.beginPath(); g.arc(px, py, 7, 0, 7); g.fill();
+      g.fillStyle = '#ffffff'; g.beginPath(); g.arc(px - 5, py - 6, 4.2, 0, 7); g.fill();
+      g.beginPath(); g.arc(px + 5, py + 5, 2, 0, 7); g.fill();
       g.restore();
-      g.strokeStyle = '#2a1a14'; g.lineWidth = 3.5;
-      g.beginPath(); g.ellipse(x, ey, 15, ry, 0, Math.PI * 1.05, Math.PI * 1.95); g.stroke();
-      if (lashes) { g.lineWidth = 3; for (const k of [-1, 0, 1]) { g.beginPath(); g.moveTo(x + s * (10 + k * 4), ey - ry + 2); g.lineTo(x + s * (16 + k * 5), ey - ry - 5); g.stroke(); } }
+      g.strokeStyle = '#1e120c'; g.lineWidth = 5; g.lineCap = 'round';
+      g.beginPath(); g.ellipse(x, ey, rx + 1, ry + 1, 0, Math.PI * 1.08, Math.PI * 1.92); g.stroke();
+      if (lashes) { g.lineWidth = 3.5; for (const k of [0, 1, 2]) { const a = Math.PI * (1.2 + k * 0.1) * (s > 0 ? 1 : 1); const ex = x + s * Math.abs(Math.cos(a)) * (rx - 2 + k * 2), eyy = ey - Math.abs(Math.sin(a)) * ry; g.beginPath(); g.moveTo(ex, eyy); g.lineTo(ex + s * 7, eyy - 6); g.stroke(); } }
     }
     // brows
-    g.strokeStyle = '#3a2418'; g.lineWidth = 6; g.lineCap = 'round';
+    g.strokeStyle = '#3a2418'; g.lineWidth = 7.5; g.lineCap = 'round';
     g.beginPath();
-    const by = ey - 30 + e.browY;
+    const by = ey - 36 + e.browY;
     // inner end rises when worried/sad (brow>0) and drops when angry (brow<0)
     g.moveTo(x - s * 15, by - e.brow * 14);
     g.lineTo(x + s * 15, by + e.brow * 8);
@@ -134,7 +141,11 @@ function drawFace(g, expr, blink, lx, ly, eyeColor, lashes) {
   switch (e.mouth) {
     case 'smile': {
       const c = e.curve * 22;
-      g.beginPath(); g.moveTo(cx - 24, my - c * 0.3); g.quadraticCurveTo(cx, my + c, cx + 24, my - c * 0.3); g.stroke();
+      if (e.curve > 0.45) { // open friendly smile with teeth
+        g.fillStyle = '#6a1a22';
+        g.beginPath(); g.moveTo(cx - 24, my - 4); g.quadraticCurveTo(cx, my + c * 1.3, cx + 24, my - 4); g.quadraticCurveTo(cx, my + 2, cx - 24, my - 4); g.fill();
+        g.save(); g.clip(); g.fillStyle = '#fff'; g.fillRect(cx - 24, my - 6, 48, 9); g.fillStyle = '#ff7a8a'; g.beginPath(); g.ellipse(cx, my + c, 12, 6, 0, 0, 7); g.fill(); g.restore();
+      } else { g.beginPath(); g.moveTo(cx - 24, my - c * 0.3); g.quadraticCurveTo(cx, my + c, cx + 24, my - c * 0.3); g.stroke(); }
       break;
     }
     case 'open': {
@@ -209,7 +220,7 @@ export class Character {
     // neck + head
     const neck = new THREE.Group(); neck.position.y = 0.53; body.add(neck);
     const neckMesh = mesh(GEO.cyl, skin, 0.055, 0.1, 0.055); neckMesh.position.y = 0.03; neck.add(neckMesh);
-    const head = new THREE.Group(); head.position.y = 0.08; neck.add(head);
+    const head = new THREE.Group(); head.position.y = 0.06; head.scale.setScalar(1.3); neck.add(head); // stylized big head
     this.neck = neck; this.head = head;
     const R = 0.155;
     const skull = mesh(GEO.sphere, skin, R, R * 1.08, R * 0.98); skull.position.y = 0.14; head.add(skull);
@@ -226,6 +237,7 @@ export class Character {
     head.add(face);
     this.faceMesh = face;
     this.headR = R;
+    const nose = mesh(GEO.sphereLo, skin, 0.022, 0.018, 0.02); nose.position.set(0, 0.115, -R * 0.99); head.add(nose);
     this.addHair(head, L.hair, hairM, R);
     this.addAccessory(head, L.accessory, R);
 

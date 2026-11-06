@@ -12,7 +12,7 @@ import { PERSONAS } from './bots/personas.js';
 import { Reactions } from './bots/reactions.js';
 import { save, setSetting, storeMatch } from './core/store.js';
 import { bus } from './core/events.js';
-import { setMood } from './core/audio.js';
+import { setMood, setMusicMode } from './core/audio.js';
 import { reset, fadeThrough, toast } from './ui/ui.js';
 import { Match } from './games/framework.js';
 import { GAMES } from './games/registry.js';
@@ -133,6 +133,7 @@ export class App {
   // ---------- matches ----------
   enterTable() {
     this.stopLobby();
+    setMusicMode('table');
     this.rig.setCinematic(null);
   }
   mountHud(hud) {
@@ -164,6 +165,7 @@ export class App {
   }
   goMenu() {
     this.rig.focus = 0.92;
+    setMusicMode('menu');
     if (!this.lobby) this.startLobby();
     this.rig.setCinematic('menu');
     reset(this.screens.mainMenu, this);

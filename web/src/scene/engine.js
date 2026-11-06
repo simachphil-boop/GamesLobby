@@ -2,11 +2,16 @@
 import * as THREE from 'three';
 import { save } from '../core/store.js';
 import { bus } from '../core/events.js';
+import { EffectComposer } from 'three/examples/jsm/postprocessing/EffectComposer.js';
+import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js';
+import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPass.js';
+import { OutputPass } from 'three/examples/jsm/postprocessing/OutputPass.js';
+import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
 
 export const QUALITY = {
-  low: { pixelRatio: 1, shadows: false, antialias: false, particles: 0.35, shadowMap: 512, lights: 1 },
-  medium: { pixelRatio: 1.5, shadows: true, antialias: false, particles: 0.7, shadowMap: 1024, lights: 2 },
-  high: { pixelRatio: 2, shadows: true, antialias: true, particles: 1, shadowMap: 2048, lights: 3 },
+  low: { pixelRatio: 1, shadows: false, antialias: false, particles: 0.35, shadowMap: 512, lights: 1, bloom: false, env: false },
+  medium: { pixelRatio: 1.5, shadows: true, antialias: false, particles: 0.7, shadowMap: 1024, lights: 2, bloom: true, env: true },
+  high: { pixelRatio: 2, shadows: true, antialias: true, particles: 1, shadowMap: 2048, lights: 3, bloom: true, env: true },
 };
 
 // ---------- Tweens ----------
@@ -68,7 +73,7 @@ export class Engine {
     this.renderer = new THREE.WebGLRenderer({ antialias: this.q.antialias, powerPreference: 'high-performance' });
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
-    this.renderer.toneMappingExposure = 1.05;
+    this.renderer.toneMappingExposure = 0.95;
     this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
     container.appendChild(this.renderer.domElement);
     this.scene = new THREE.Scene();
@@ -100,6 +105,23 @@ export class Engine {
 
   applyQuality() {
     const dpr = Math.min(window.devicePixelRatio || 1, this.q.pixelRatio);
+    // image-based lighting gives PBR materials soft reflections (gold, varnish, glass)
+    if (this.q.env && !this.envTex) {
+      const pm = new THREE.PMREMGenerator(this.renderer);
+      this.envTex = pm.fromScene(new RoomEnvironment(), 0.04).texture;
+      pm.dispose();
+    }
+    this.scene.environment = this.q.env ? this.envTex : null;
+    this.scene.environmentIntensity = 0.32;
+    // bloom makes neon signs, lamps and gold highlights glow
+    if (this.q.bloom && !this.composer) {
+      this.composer = new EffectComposer(this.renderer);
+      this.composer.addPass(new RenderPass(this.scene, this.camera));
+      this.bloom = new UnrealBloomPass(new THREE.Vector2(256, 256), 0.42, 0.45, 0.93);
+      this.composer.addPass(this.bloom);
+      this.composer.addPass(new OutputPass());
+    }
+    this.useComposer = !!this.q.bloom;
     this.renderer.setPixelRatio(dpr);
     this.renderer.shadowMap.enabled = this.q.shadows;
     this.scene.traverse((o) => {
@@ -117,6 +139,7 @@ export class Engine {
     this.renderer.setSize(w, h, false);
     this.renderer.domElement.style.width = w + 'px';
     this.renderer.domElement.style.height = h + 'px';
+    if (this.composer) { this.composer.setPixelRatio(this.renderer.getPixelRatio()); this.composer.setSize(w, h); }
     this.camera.aspect = w / h;
     // wider vertical FOV in portrait so the table fits
     this.camera.fov = w < h ? 68 : 52;
@@ -138,7 +161,7 @@ export class Engine {
       const dt = Math.min(0.05, this.clock.getDelta());
       tweens.update(dt);
       for (const fn of this.updaters) { try { fn(dt, tweens.time); } catch (e) { console.error(e); } }
-      this.renderer.render(this.scene, this.camera);
+      if (this.useComposer && this.composer) this.composer.render(); else this.renderer.render(this.scene, this.camera);
     };
     requestAnimationFrame(loop);
   }

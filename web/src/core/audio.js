@@ -1,128 +1,106 @@
-// Audio System: every sound is synthesized with WebAudio at runtime (no licensed samples),
-// so the APK stays small and all audio is original.
-//   sfx(name)       — one-shot effects
-//   music           — generative lounge music (per-room mood), separate toggle/volume
-//   ambience        — room tone (fireplace crackle, city hum, synth drone…), separate toggle
+// Audio System (sample-based).
+//   • UI sounds: studio-recorded CC0 samples (uisfx, see assets/audio/ui/LICENSE-CC0.txt)
+//   • Table foley: physically-modelled dice/cards/chips/wood/coins rendered offline (tools/audio/foley.py)
+//   • Music: original arrangements rendered with FluidSynth + FluidR3_GM (MIT) (tools/audio/compose.py)
+//   • Ambience: seamless room-tone loops per room
+// Assets are embedded by the build as window.BV_SOUNDS (base64), so they work from file:// on PC and Android.
 import { save } from './store.js';
 import { bus } from './events.js';
 
 let ctx = null;
-let master, sfxGain, musicGain, ambGain, noiseBuf;
-const MOODS = {
-  modern: { bpm: 84, root: 57, prog: [[0, 4, 7, 11], [9, 12, 16, 19], [2, 5, 9, 12], [7, 11, 14, 17]], wave: 'triangle' },
-  cozy: { bpm: 72, root: 55, prog: [[0, 4, 7, 11], [5, 9, 12, 16], [9, 12, 16, 19], [7, 11, 14, 17]], wave: 'sine' },
-  luxury: { bpm: 76, root: 53, prog: [[0, 4, 7, 11], [2, 5, 9, 12], [4, 7, 11, 14], [5, 9, 12, 16]], wave: 'sine' },
-  retro: { bpm: 104, root: 57, prog: [[0, 4, 7], [5, 9, 12], [7, 11, 14], [5, 9, 12]], wave: 'square' },
-  future: { bpm: 96, root: 50, prog: [[0, 3, 7, 10], [8, 12, 15, 19], [3, 7, 10, 14], [10, 14, 17, 21]], wave: 'sawtooth' },
-  casino: { bpm: 92, root: 52, prog: [[0, 3, 7, 10], [5, 8, 12, 15], [7, 10, 14, 17], [3, 7, 10, 14]], wave: 'triangle' },
+let master, sfxGain, ambGain;
+const buffers = new Map();
+let musicEl = null, musicName = null, fadeTimer = null;
+let ambSrc = null, ambName = null;
+const ROOM_MUSIC = { modern: 'modern', luxury: 'luxury', cozy: 'cozy', retro: 'retro', future: 'future', casino: 'luxury' };
+const ROOM_AMB = { modern: 'amb_city', luxury: 'amb_fire', cozy: 'amb_fire', retro: 'amb_room', future: 'amb_future', casino: 'amb_room' };
+let musicMode = 'menu';
+
+// game event -> [category, sample, gain, pitchJitter]
+const MAP = {
+  click: ['ui', 'click', 0.7], hover: ['ui', 'hover', 0.35], back: ['ui', 'back', 0.6], open: ['ui', 'open', 0.55], confirm: ['ui', 'confirm', 0.7],
+  notify: ['ui', 'notify', 0.7], turn: ['ui', 'turn', 0.6], win: ['ui', 'win', 0.9], lose: ['ui', 'lose', 0.8], buy: ['ui', 'buy', 0.8],
+  error: ['ui', 'error', 0.6], special: ['ui', 'special', 0.75], levelup: ['ui', 'levelup', 0.9], pop: ['ui', 'pop', 0.6], tick: ['ui', 'tick', 0.4],
+  achievement: ['ui', 'achievement', 0.9], reward: ['ui', 'reward', 0.9], bad: ['ui', 'error', 0.5],
+  dice: ['fx', 'dice', 1, 0.05], diceLand: ['fx', 'diceLand', 0.9, 0.06], card: ['fx', 'card', 0.8, 0.08], cardSlap: ['fx', 'cardSlap', 0.9, 0.06],
+  deal: ['fx', 'deal', 0.8, 0.06], shuffle: ['fx', 'shuffle', 0.8, 0.03], chip: ['fx', 'chip', 0.8, 0.08], chips: ['fx', 'chips', 0.8, 0.05],
+  coin: ['fx', 'coin', 0.6, 0.06], coins: ['fx', 'coins', 0.65, 0.05], pay: ['fx', 'coins', 0.55, 0.05], piece: ['fx', 'piece', 0.9, 0.07],
+  step: ['fx', 'step', 0.6, 0.12], capture: ['fx', 'capture', 0.9, 0.05], build: ['fx', 'build', 0.8, 0.05], domino: ['fx', 'domino', 0.9, 0.07],
+  drop: ['fx', 'drop', 0.9, 0.06], whoosh: ['fx', 'whoosh', 0.5, 0.1], laugh: ['ui', 'pop', 0.3],
 };
+
+function b64ToBuf(b64) {
+  const bin = atob(b64);
+  const out = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
+  return out.buffer;
+}
+const SND = () => window.BV_SOUNDS || { ui: {}, fx: {}, music: {} };
 
 export function initAudio() {
   if (ctx) { if (ctx.state === 'suspended') ctx.resume(); return; }
   const AC = window.AudioContext || window.webkitAudioContext;
   if (!AC) return;
   ctx = new AC();
-  master = ctx.createGain(); master.gain.value = 0.9; master.connect(ctx.destination);
-  sfxGain = ctx.createGain(); sfxGain.connect(master);
-  musicGain = ctx.createGain(); musicGain.connect(master);
+  master = ctx.createGain(); master.connect(ctx.destination);
+  // gentle bus compression keeps loud foley and UI consistent
+  const comp = ctx.createDynamicsCompressor();
+  comp.threshold.value = -14; comp.ratio.value = 3; comp.attack.value = 0.003; comp.release.value = 0.2;
+  comp.connect(master);
+  sfxGain = ctx.createGain(); sfxGain.connect(comp);
   ambGain = ctx.createGain(); ambGain.connect(master);
-  noiseBuf = ctx.createBuffer(1, ctx.sampleRate * 2, ctx.sampleRate);
-  const d = noiseBuf.getChannelData(0);
-  for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
+  // decode short samples up front (small)
+  for (const cat of ['ui', 'fx']) {
+    for (const [name, b64] of Object.entries(SND()[cat] || {})) {
+      ctx.decodeAudioData(b64ToBuf(b64)).then((b) => buffers.set(cat + '/' + name, b)).catch(() => {});
+    }
+  }
   applyVolumes();
-  startMusic();
-  startAmbience();
+  playMusic(musicMode === 'menu' ? 'menu' : ROOM_MUSIC[save.settings.room]);
+  setAmbience(save.settings.room);
 }
 
 export function applyVolumes() {
-  if (!ctx) return;
   const s = save.settings;
-  const now = ctx.currentTime;
-  sfxGain.gain.setTargetAtTime(s.sfx ? s.sfxVol : 0, now, 0.05);
-  musicGain.gain.setTargetAtTime(s.music ? s.musicVol * 0.35 : 0, now, 0.3);
-  ambGain.gain.setTargetAtTime(s.ambience ? 0.22 : 0, now, 0.3);
+  if (ctx) {
+    sfxGain.gain.setTargetAtTime(s.sfx ? s.sfxVol : 0, ctx.currentTime, 0.05);
+    ambGain.gain.setTargetAtTime(s.ambience ? 0.35 : 0, ctx.currentTime, 0.3);
+  }
+  if (musicEl) musicEl.volume = s.music ? Math.min(1, s.musicVol * 0.7) : 0;
 }
 bus.on('settings', (k) => {
   if (['sfx', 'sfxVol', 'music', 'musicVol', 'ambience'].includes(k)) applyVolumes();
-  if (k === 'room') { setMood(save.settings.room); }
+  if (k === 'room') setMood(save.settings.room);
 });
 
-export function suspendAudio() { if (ctx && ctx.state === 'running') ctx.suspend(); }
-export function resumeAudio() { if (ctx && ctx.state === 'suspended') ctx.resume(); }
+export function suspendAudio() { if (ctx && ctx.state === 'running') ctx.suspend(); musicEl?.pause(); }
+export function resumeAudio() { if (ctx && ctx.state === 'suspended') ctx.resume(); if (musicEl && save.settings.music) musicEl.play().catch(() => {}); }
 
-// ---------- primitives ----------
-function tone(freq, dur, { type = 'sine', vol = 0.3, attack = 0.005, when = 0, slide = 0, out = sfxGain, detune = 0 } = {}) {
-  const t = ctx.currentTime + when;
-  const o = ctx.createOscillator();
-  const g = ctx.createGain();
-  o.type = type; o.frequency.setValueAtTime(freq, t); o.detune.value = detune;
-  if (slide) o.frequency.exponentialRampToValueAtTime(Math.max(20, freq * slide), t + dur);
-  g.gain.setValueAtTime(0, t);
-  g.gain.linearRampToValueAtTime(vol, t + attack);
-  g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
-  o.connect(g); g.connect(out);
-  o.start(t); o.stop(t + dur + 0.05);
-}
-function noise(dur, { vol = 0.3, when = 0, freq = 2000, q = 1, type = 'bandpass', out = sfxGain, attack = 0.002 } = {}) {
-  const t = ctx.currentTime + when;
-  const src = ctx.createBufferSource();
-  src.buffer = noiseBuf;
-  const f = ctx.createBiquadFilter(); f.type = type; f.frequency.value = freq; f.Q.value = q;
-  const g = ctx.createGain();
-  g.gain.setValueAtTime(0, t); g.gain.linearRampToValueAtTime(vol, t + attack);
-  g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
-  src.connect(f); f.connect(g); g.connect(out);
-  src.start(t, Math.random() * 1.5); src.stop(t + dur + 0.05);
-}
-const midi = (m) => 440 * Math.pow(2, (m - 69) / 12);
-
-// ---------- sound effects ----------
-const SFX = {
-  click: () => { tone(880, 0.06, { type: 'triangle', vol: 0.18 }); tone(1320, 0.04, { type: 'sine', vol: 0.08, when: 0.01 }); },
-  hover: () => tone(1200, 0.03, { vol: 0.05 }),
-  back: () => tone(520, 0.08, { type: 'triangle', vol: 0.15, slide: 0.7 }),
-  open: () => { tone(500, 0.12, { type: 'sine', vol: 0.12, slide: 1.8 }); noise(0.15, { vol: 0.05, freq: 3000 }); },
-  whoosh: () => noise(0.5, { vol: 0.18, freq: 900, q: 0.7, attack: 0.18 }),
-  dice: () => {
-    for (let i = 0; i < 9; i++) {
-      const w = i * 0.055 + Math.random() * 0.03;
-      noise(0.05, { vol: 0.35 - i * 0.03, when: w, freq: 2500 + Math.random() * 2500, q: 4 });
-      tone(180 + Math.random() * 120, 0.05, { type: 'square', vol: 0.05, when: w });
-    }
-  },
-  diceLand: () => { noise(0.08, { vol: 0.3, freq: 1600, q: 3 }); tone(140, 0.12, { type: 'sine', vol: 0.25 }); },
-  card: () => { noise(0.12, { vol: 0.25, freq: 4500, q: 0.8, attack: 0.01 }); noise(0.04, { vol: 0.2, when: 0.1, freq: 1500, q: 2 }); },
-  cardSlap: () => { noise(0.07, { vol: 0.4, freq: 2200, q: 1.2 }); tone(160, 0.08, { vol: 0.2 }); },
-  deal: () => { for (let i = 0; i < 3; i++) noise(0.06, { vol: 0.18, when: i * 0.07, freq: 5000, q: 1 }); },
-  shuffle: () => { for (let i = 0; i < 14; i++) noise(0.04, { vol: 0.15, when: i * 0.035, freq: 4000 + Math.random() * 2000, q: 1 }); },
-  piece: () => { tone(320, 0.09, { type: 'sine', vol: 0.3, slide: 0.6 }); noise(0.04, { vol: 0.15, freq: 1200, q: 3 }); },
-  step: () => { tone(420 + Math.random() * 60, 0.06, { type: 'sine', vol: 0.16, slide: 0.7 }); },
-  capture: () => { tone(220, 0.25, { type: 'sawtooth', vol: 0.12, slide: 0.4 }); noise(0.12, { vol: 0.25, freq: 900, q: 2 }); tone(988, 0.2, { vol: 0.1, when: 0.08 }); },
-  coin: () => { tone(1568, 0.12, { type: 'square', vol: 0.06 }); tone(2093, 0.25, { type: 'square', vol: 0.06, when: 0.07 }); },
-  coins: () => { for (let i = 0; i < 5; i++) tone(1400 + Math.random() * 900, 0.15, { type: 'triangle', vol: 0.08, when: i * 0.06 }); },
-  buy: () => { [72, 76, 79, 84].forEach((m, i) => tone(midi(m), 0.18, { type: 'triangle', vol: 0.15, when: i * 0.07 })); },
-  build: () => { for (let i = 0; i < 3; i++) { noise(0.06, { vol: 0.3, when: i * 0.12, freq: 700, q: 2 }); tone(200, 0.08, { vol: 0.15, when: i * 0.12 }); } },
-  pay: () => { tone(660, 0.1, { type: 'triangle', vol: 0.12 }); tone(440, 0.18, { type: 'triangle', vol: 0.12, when: 0.08 }); },
-  bad: () => { tone(330, 0.3, { type: 'sawtooth', vol: 0.08, slide: 0.5 }); },
-  error: () => { tone(200, 0.12, { type: 'square', vol: 0.08 }); tone(150, 0.15, { type: 'square', vol: 0.08, when: 0.1 }); },
-  notify: () => { tone(988, 0.1, { vol: 0.14 }); tone(1319, 0.18, { vol: 0.14, when: 0.09 }); },
-  turn: () => { tone(784, 0.12, { type: 'sine', vol: 0.14 }); tone(1175, 0.2, { type: 'sine', vol: 0.12, when: 0.1 }); },
-  win: () => { [60, 64, 67, 72, 76, 79, 84].forEach((m, i) => tone(midi(m), 0.4, { type: 'triangle', vol: 0.14, when: i * 0.09 })); tone(midi(84), 1.2, { type: 'sine', vol: 0.12, when: 0.65 }); },
-  lose: () => { [67, 63, 60, 55].forEach((m, i) => tone(midi(m), 0.45, { type: 'triangle', vol: 0.13, when: i * 0.18 })); },
-  pop: () => tone(600, 0.08, { type: 'sine', vol: 0.2, slide: 2 }),
-  special: () => { [76, 79, 83, 88].forEach((m, i) => tone(midi(m), 0.2, { type: 'square', vol: 0.06, when: i * 0.05 })); noise(0.4, { vol: 0.08, freq: 6000, attack: 0.1 }); },
-  tick: () => tone(1800, 0.02, { type: 'square', vol: 0.04 }),
-  drop: () => { tone(500, 0.18, { type: 'sine', vol: 0.2, slide: 0.35 }); noise(0.05, { vol: 0.2, when: 0.15, freq: 1000, q: 3 }); },
-  chip: () => { noise(0.04, { vol: 0.25, freq: 3500, q: 6 }); tone(2600, 0.05, { vol: 0.05 }); },
-  laugh: () => { for (let i = 0; i < 4; i++) tone(520 - i * 30, 0.08, { type: 'sine', vol: 0.05, when: i * 0.11 }); },
-  levelup: () => { [67, 71, 74, 79, 83, 86].forEach((m, i) => tone(midi(m), 0.3, { type: 'square', vol: 0.05, when: i * 0.06 })); },
-};
-
-let lastHaptic = 0;
+let lastPlay = new Map();
 export function sfx(name) {
   if (!ctx || !save.settings.sfx) return;
-  try { SFX[name] && SFX[name](); } catch (e) { /* ignore */ }
+  const m = MAP[name];
+  if (!m) return;
+  const [cat, sample, gain, jitter = 0] = m;
+  const buf = buffers.get(cat + '/' + sample);
+  if (!buf) return;
+  const now = ctx.currentTime;
+  if (now - (lastPlay.get(name) || 0) < 0.03) return; // avoid machine-gun stacking
+  lastPlay.set(name, now);
+  const src = ctx.createBufferSource();
+  src.buffer = buf;
+  src.playbackRate.value = 1 + (Math.random() * 2 - 1) * jitter;
+  const g = ctx.createGain();
+  g.gain.value = gain * (1 - Math.random() * jitter);
+  // subtle stereo placement for table sounds
+  if (cat === 'fx' && ctx.createStereoPanner) {
+    const p = ctx.createStereoPanner(); p.pan.value = (Math.random() - 0.5) * 0.4;
+    src.connect(g); g.connect(p); p.connect(sfxGain);
+  } else { src.connect(g); g.connect(sfxGain); }
+  src.start();
 }
+
+let lastHaptic = 0;
 export function haptic() {
   if (!save.settings.haptics) return;
   const now = Date.now();
@@ -134,70 +112,58 @@ export function haptic() {
   } catch (e) { /* ignore */ }
 }
 
-// ---------- generative music ----------
-let mood = MOODS.modern;
-let musicTimer = null;
-let nextBar = 0;
-let bar = 0;
-export function setMood(room) { mood = MOODS[room] || MOODS.modern; ambienceFor(room); }
-
-function startMusic() {
-  setMood(save.settings.room);
-  nextBar = ctx.currentTime + 0.2;
-  clearInterval(musicTimer);
-  musicTimer = setInterval(scheduleMusic, 200);
+// ---------- music (streamed via <audio>, crossfaded) ----------
+const urlCache = new Map();
+function musicUrl(name) {
+  if (urlCache.has(name)) return urlCache.get(name);
+  const b64 = SND().music?.[name];
+  if (!b64) return null;
+  const url = URL.createObjectURL(new Blob([b64ToBuf(b64)], { type: 'audio/mpeg' }));
+  urlCache.set(name, url);
+  return url;
 }
-function scheduleMusic() {
-  if (!ctx || ctx.state !== 'running') return;
-  const beat = 60 / mood.bpm;
-  while (nextBar < ctx.currentTime + 1.5) {
-    const chord = mood.prog[bar % mood.prog.length];
-    const t0 = nextBar - ctx.currentTime;
-    // pad
-    chord.forEach((iv, k) => {
-      tone(midi(mood.root + iv), beat * 4.2, { type: mood.wave === 'square' ? 'triangle' : mood.wave, vol: 0.05, attack: 0.6, when: t0, out: musicGain, detune: (k - 1.5) * 4 });
-    });
-    // bass
-    tone(midi(mood.root - 12 + chord[0]), beat * 1.8, { type: 'sine', vol: 0.12, attack: 0.02, when: t0, out: musicGain });
-    tone(midi(mood.root - 12 + chord[0] + 7), beat * 0.9, { type: 'sine', vol: 0.08, attack: 0.02, when: t0 + beat * 2, out: musicGain });
-    // light arpeggio melody
-    for (let i = 0; i < 4; i++) {
-      if (Math.random() < 0.55) {
-        const n = chord[(i + bar) % chord.length] + 12 + (Math.random() < 0.3 ? 12 : 0);
-        tone(midi(mood.root + n), beat * 0.8, { type: 'sine', vol: 0.035, when: t0 + i * beat + beat * 0.5, out: musicGain });
-      }
-      // soft hat
-      noise(0.03, { vol: 0.02, when: t0 + i * beat + beat * 0.5, freq: 8000, q: 1, type: 'highpass', out: musicGain });
-    }
-    nextBar += beat * 4;
-    bar++;
-  }
+function playMusic(name) {
+  if (!name || name === musicName) return;
+  const url = musicUrl(name);
+  if (!url) return;
+  musicName = name;
+  const old = musicEl;
+  const el = new Audio(url);
+  el.loop = true;
+  el.volume = 0;
+  musicEl = el;
+  const target = () => (save.settings.music ? Math.min(1, save.settings.musicVol * 0.7) : 0);
+  el.play().catch(() => {});
+  clearInterval(fadeTimer);
+  let k = 0;
+  fadeTimer = setInterval(() => {
+    k = Math.min(1, k + 0.04);
+    el.volume = target() * k;
+    if (old) old.volume = Math.max(0, old.volume * (1 - k));
+    if (k >= 1) { clearInterval(fadeTimer); if (old) { old.pause(); old.src = ''; } }
+  }, 60);
+}
+/** 'menu' or 'table' — the menu has its own theme, tables play the room's track. */
+export function setMusicMode(mode) {
+  musicMode = mode;
+  if (ctx) playMusic(mode === 'menu' ? 'menu' : ROOM_MUSIC[save.settings.room]);
 }
 
-// ---------- ambience ----------
-let ambNodes = [];
-let crackleTimer = null;
-function startAmbience() { ambienceFor(save.settings.room); }
-function ambienceFor(room) {
+function setAmbience(room) {
   if (!ctx) return;
-  ambNodes.forEach((n) => { try { n.stop(); } catch (e) { /* ignore */ } });
-  ambNodes = [];
-  clearInterval(crackleTimer);
-  // continuous filtered noise bed
-  const src = ctx.createBufferSource(); src.buffer = noiseBuf; src.loop = true;
-  const f = ctx.createBiquadFilter(); f.type = 'lowpass';
-  f.frequency.value = room === 'future' ? 300 : room === 'modern' ? 420 : 260;
-  const g = ctx.createGain(); g.gain.value = room === 'cozy' ? 0.25 : 0.35;
-  src.connect(f); f.connect(g); g.connect(ambGain); src.start();
-  ambNodes.push(src);
-  if (room === 'future' || room === 'casino') {
-    const o = ctx.createOscillator(); o.type = 'sine'; o.frequency.value = room === 'future' ? 55 : 73.4;
-    const og = ctx.createGain(); og.gain.value = 0.06; o.connect(og); og.connect(ambGain); o.start(); ambNodes.push(o);
-  }
-  if (room === 'cozy' || room === 'luxury') {
-    crackleTimer = setInterval(() => {
-      if (!ctx || ctx.state !== 'running') return;
-      for (let i = 0; i < 3; i++) if (Math.random() < 0.5) noise(0.02, { vol: 0.25, when: Math.random() * 0.3, freq: 2500 + Math.random() * 3000, q: 3, out: ambGain });
-    }, 320);
-  }
+  const name = ROOM_AMB[room] || 'amb_room';
+  if (name === ambName) return;
+  const b64 = SND().fx?.[name];
+  if (!b64) return;
+  ambName = name;
+  ctx.decodeAudioData(b64ToBuf(b64)).then((buf) => {
+    if (ambSrc) { try { ambSrc.stop(); } catch (e) { /* ignore */ } }
+    ambSrc = ctx.createBufferSource();
+    ambSrc.buffer = buf; ambSrc.loop = true;
+    ambSrc.connect(ambGain); ambSrc.start();
+  }).catch(() => {});
+}
+export function setMood(room) {
+  setAmbience(room);
+  if (musicMode !== 'menu' && ctx) playMusic(ROOM_MUSIC[room]);
 }
