@@ -34,6 +34,6 @@ BEGIN
 END
 RC
 (cd "$B" && x86_64-w64-mingw32-windres res.rc -O coff -o res.o)
-x86_64-w64-mingw32-gcc -O2 -municode -mwindows -o "$ROOT/dist/BOARDVERSE.exe" "$ROOT/pc/launcher.c" "$B/res.o" -lshell32 -lole32
+x86_64-w64-mingw32-gcc -O2 -municode -mwindows -o "$ROOT/dist/BOARDVERSE.exe" "$ROOT/pc/launcher.c" "$B/res.o" -lshell32 -lole32 -lws2_32
 x86_64-w64-mingw32-strip "$ROOT/dist/BOARDVERSE.exe"
 ls -la "$ROOT/dist/BOARDVERSE.exe"

@@ -1,63 +1,63 @@
 /*
- * BOARDVERSE for Windows — native launcher.
- * The whole game (single HTML file) is embedded as a resource. On start it is unpacked to
- * %LOCALAPPDATA%\BOARDVERSE and opened in its own app window (Edge/Chrome "--app" mode with a
- * private profile, so saves persist and no browser UI is shown). Falls back to the default browser.
+ * BOARDVERSE for Windows — native launcher (no files are written by the launcher).
+ * The whole game (single HTML file) is embedded as a resource and served from memory by a tiny
+ * HTTP server bound to 127.0.0.1 only. The game opens in its own app window (Edge/Chrome "--app"),
+ * falling back to the default browser. A fixed port keeps saves (localStorage) between launches.
  */
+#include <winsock2.h>
+#include <ws2tcpip.h>
 #include <windows.h>
 #include <shlobj.h>
 #include <stdio.h>
 #include <wchar.h>
 
 #define IDR_GAME 101
+static const char *g_data; static DWORD g_size; static SOCKET g_srv = INVALID_SOCKET;
 
 static int file_exists(const wchar_t *p) { DWORD a = GetFileAttributesW(p); return a != INVALID_FILE_ATTRIBUTES && !(a & FILE_ATTRIBUTE_DIRECTORY); }
 
-/* Writes the game to dir\boardverse.html. Returns 1 if a usable copy is there afterwards. */
-static int unpack_to(const wchar_t *dir, const void *data, DWORD size, wchar_t *html, DWORD *err) {
-  wchar_t tmp[MAX_PATH];
-  CreateDirectoryW(dir, NULL);
-  swprintf(html, MAX_PATH, L"%s\\boardverse.html", dir);
-  WIN32_FILE_ATTRIBUTE_DATA fa;
-  if (GetFileAttributesExW(html, GetFileExInfoStandard, &fa) && fa.nFileSizeLow == size && fa.nFileSizeHigh == 0) return 1; /* up to date */
-  swprintf(tmp, MAX_PATH, L"%s\\boardverse.tmp", dir);
-  HANDLE f = CreateFileW(tmp, GENERIC_WRITE, 0, NULL, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
-  if (f == INVALID_HANDLE_VALUE) { *err = GetLastError(); return file_exists(html); }
-  DWORD w = 0;
-  BOOL ok = WriteFile(f, data, size, &w, NULL) && w == size;
-  CloseHandle(f);
-  if (!ok) { *err = GetLastError(); DeleteFileW(tmp); return file_exists(html); }
-  if (!MoveFileExW(tmp, html, MOVEFILE_REPLACE_EXISTING)) { *err = GetLastError(); DeleteFileW(tmp); return file_exists(html); } /* old copy still in use: keep using it */
-  return 1;
+static DWORD WINAPI serve(LPVOID unused) {
+  for (;;) {
+    SOCKET c = accept(g_srv, NULL, NULL);
+    if (c == INVALID_SOCKET) return 0;
+    char req[2048]; int n = recv(c, req, sizeof(req) - 1, 0);
+    if (n <= 0) { closesocket(c); continue; }
+    req[n] = 0;
+    char head[256];
+    if (strncmp(req, "GET / ", 6) != 0 && strncmp(req, "GET /index.html", 15) != 0) {
+      const char *nf = "HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\nConnection: close\r\n\r\n";
+      send(c, nf, (int)strlen(nf), 0); closesocket(c); continue;
+    }
+    int hl = sprintf(head, "HTTP/1.1 200 OK\r\nContent-Type: text/html; charset=utf-8\r\nContent-Length: %lu\r\nCache-Control: no-cache\r\nConnection: close\r\n\r\n", (unsigned long)g_size);
+    send(c, head, hl, 0);
+    DWORD off = 0;
+    while (off < g_size) { int k = send(c, g_data + off, (int)((g_size - off) > 65536 ? 65536 : (g_size - off)), 0); if (k <= 0) break; off += k; }
+    shutdown(c, SD_SEND); closesocket(c);
+  }
 }
 
 int WINAPI wWinMain(HINSTANCE hInst, HINSTANCE hPrev, PWSTR cmd, int show) {
-  wchar_t base[MAX_PATH], html[MAX_PATH], profile[MAX_PATH], url[MAX_PATH * 2], args[MAX_PATH * 4];
-
   HRSRC r = FindResourceW(hInst, MAKEINTRESOURCEW(IDR_GAME), (LPCWSTR)RT_RCDATA);
   if (!r) { MessageBoxW(NULL, L"Game data missing.", L"BOARDVERSE", MB_ICONERROR); return 1; }
-  DWORD size = SizeofResource(hInst, r);
-  const void *data = LockResource(LoadResource(hInst, r));
+  g_size = SizeofResource(hInst, r);
+  g_data = (const char *)LockResource(LoadResource(hInst, r));
 
-  /* candidate folders: LocalAppData, Temp, next to the exe */
-  wchar_t dirs[3][MAX_PATH]; int nd = 0;
-  if (SUCCEEDED(SHGetFolderPathW(NULL, CSIDL_LOCAL_APPDATA, NULL, 0, dirs[nd]))) { wcscat(dirs[nd], L"\\BOARDVERSE"); nd++; }
-  if (GetTempPathW(MAX_PATH, dirs[nd])) { wcscat(dirs[nd], L"BOARDVERSE"); nd++; }
-  if (GetModuleFileNameW(NULL, dirs[nd], MAX_PATH)) { wchar_t *sl = wcsrchr(dirs[nd], L'\\'); if (sl) { wcscpy(sl, L"\\BOARDVERSE-data"); nd++; } }
-  int ok = 0; DWORD err = 0;
-  for (int i = 0; i < nd && !ok; i++) { if (unpack_to(dirs[i], data, size, html, &err)) { wcscpy(base, dirs[i]); ok = 1; } }
-  if (!ok) {
-    wchar_t msg[512];
-    swprintf(msg, 512, L"Cannot write game files (Windows error %lu).\nTry running from another folder (e.g. Desktop) or allow BOARDVERSE in your antivirus.", err);
-    MessageBoxW(NULL, msg, L"BOARDVERSE", MB_ICONERROR);
-    return 1;
+  WSADATA wsa;
+  if (WSAStartup(MAKEWORD(2, 2), &wsa)) { MessageBoxW(NULL, L"Network init failed.", L"BOARDVERSE", MB_ICONERROR); return 1; }
+  g_srv = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
+  struct sockaddr_in a = { 0 }; a.sin_family = AF_INET; a.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+  int port = 0;
+  for (int p = 48765; p < 48780; p++) { a.sin_port = htons((u_short)p); if (bind(g_srv, (struct sockaddr *)&a, sizeof(a)) == 0) { port = p; break; } }
+  if (!port || listen(g_srv, 16)) {
+    wchar_t msg[200]; swprintf(msg, 200, L"Cannot start BOARDVERSE (error %d).", WSAGetLastError());
+    MessageBoxW(NULL, msg, L"BOARDVERSE", MB_ICONERROR); return 1;
   }
-  swprintf(profile, MAX_PATH, L"%s\\profile", base);
+  CreateThread(NULL, 0, serve, NULL, 0, NULL);
 
-  /* file:///C:/Users/... */
-  wcscpy(url, L"file:///");
-  wcscat(url, html);
-  for (wchar_t *p = url; *p; p++) if (*p == L'\\') *p = L'/';
+  wchar_t url[64]; swprintf(url, 64, L"http://127.0.0.1:%d/", port);
+  /* private browser profile so the window looks like an app; Edge creates it itself */
+  wchar_t profile[MAX_PATH] = L"";
+  if (SUCCEEDED(SHGetFolderPathW(NULL, CSIDL_LOCAL_APPDATA, NULL, 0, profile))) wcscat(profile, L"\\BOARDVERSE\\profile");
 
   const wchar_t *candidates[] = {
     L"%ProgramFiles(x86)%\\Microsoft\\Edge\\Application\\msedge.exe",
@@ -66,19 +66,25 @@ int WINAPI wWinMain(HINSTANCE hInst, HINSTANCE hPrev, PWSTR cmd, int show) {
     L"%ProgramFiles(x86)%\\Google\\Chrome\\Application\\chrome.exe",
     L"%LocalAppData%\\Google\\Chrome\\Application\\chrome.exe",
   };
-  wchar_t exe[MAX_PATH];
+  wchar_t exe[MAX_PATH], args[MAX_PATH * 4];
   for (int i = 0; i < 5; i++) {
     ExpandEnvironmentStringsW(candidates[i], exe, MAX_PATH);
     if (!file_exists(exe)) continue;
     swprintf(args, MAX_PATH * 4,
-      L"\"%s\" --app=\"%s\" --user-data-dir=\"%s\" --window-size=1366,820 --no-first-run --no-default-browser-check "
-      L"--autoplay-policy=no-user-gesture-required --allow-file-access-from-files --disable-features=Translate",
-      exe, url, profile);
+      L"\"%s\" --app=%s %s%s%s --window-size=1366,820 --no-first-run --no-default-browser-check --autoplay-policy=no-user-gesture-required",
+      exe, url, profile[0] ? L"--user-data-dir=\"" : L"", profile, profile[0] ? L"\"" : L"");
     STARTUPINFOW si = { sizeof(si) }; PROCESS_INFORMATION pi;
-    if (CreateProcessW(NULL, args, NULL, NULL, FALSE, 0, NULL, NULL, &si, &pi)) { CloseHandle(pi.hThread); CloseHandle(pi.hProcess); return 0; }
+    if (CreateProcessW(NULL, args, NULL, NULL, FALSE, 0, NULL, NULL, &si, &pi)) {
+      CloseHandle(pi.hThread);
+      /* keep serving while the game window is open (+ grace period for reloads) */
+      WaitForSingleObject(pi.hProcess, INFINITE);
+      CloseHandle(pi.hProcess);
+      Sleep(5000);
+      return 0;
+    }
   }
-  /* fallback: default browser */
-  if ((INT_PTR)ShellExecuteW(NULL, L"open", url, NULL, NULL, SW_SHOWNORMAL) > 32) return 0;
-  MessageBoxW(NULL, L"Please install Microsoft Edge or Google Chrome to play BOARDVERSE.", L"BOARDVERSE", MB_ICONWARNING);
-  return 1;
+  /* fallback: default browser; keep the server alive until the user closes this box */
+  ShellExecuteW(NULL, L"open", url, NULL, NULL, SW_SHOWNORMAL);
+  MessageBoxW(NULL, L"BOARDVERSE is running in your browser.\nClose this window when you finish playing.", L"BOARDVERSE", MB_ICONINFORMATION);
+  return 0;
 }
