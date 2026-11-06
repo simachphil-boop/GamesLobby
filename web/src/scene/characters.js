@@ -293,8 +293,12 @@ export class Character {
   addHair(head, style, m, R) {
     const y = 0.14;
     const cap = (sx = 1.06, sy = 1.08, sz = 1.06, dy = 0.02) => {
-      const c = new THREE.Mesh(new THREE.SphereGeometry(R, 20, 12, 0, Math.PI * 2, 0, Math.PI * 0.55), m);
-      c.scale.set(sx, sy, sz); c.position.y = y + dy; c.castShadow = true; head.add(c); return c;
+      // top cap stops above the brows; a separate back piece covers the nape
+      const c = new THREE.Mesh(new THREE.SphereGeometry(R, 20, 12, 0, Math.PI * 2, 0, Math.PI * 0.4), m);
+      c.scale.set(sx, sy, sz); c.position.y = y + dy; c.castShadow = true; head.add(c);
+      const back = new THREE.Mesh(new THREE.SphereGeometry(R, 16, 10, 0, Math.PI, 0, Math.PI * 0.62), m);
+      back.scale.set(sx * 0.99, sy * 0.98, sz * 0.99); back.position.y = y + dy * 0.5; back.castShadow = true; head.add(back);
+      return c;
     };
     switch (style) {
       case 'bald': break;

@@ -214,3 +214,4 @@ input[type=range] { width: 100%; accent-color: var(--gold); }
 .mini { font-size: 11px; color: var(--muted); }
 @media (max-width: 380px) { .btn { font-size: 13.5px; padding: 10px 13px; } .pchip .nm { max-width: 54px; } }
 .hud .btn.ghost { background: rgba(18,14,52,.88); border-color: rgba(170,170,255,.35); }
+.btn.primary .mini { color: #5a3a0a; }

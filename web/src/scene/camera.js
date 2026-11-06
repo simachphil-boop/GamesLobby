@@ -115,6 +115,12 @@ export class CameraRig {
   }
 
   update(dt, t) {
+    // in third person the held cards shrink toward the bottom so they don't cover the table
+    const tp = this.mode === 'tp' && !this.cinematic;
+    const portrait = this.handRig.userData.portrait;
+    const wantY = (portrait ? -0.25 : -0.17) - (tp ? 0.08 : 0), wantS = tp ? 0.62 : 1;
+    this.handRig.position.y += (wantY - this.handRig.position.y) * Math.min(1, dt * 6);
+    this.handRig.scale.setScalar(this.handRig.scale.x + (wantS - this.handRig.scale.x) * Math.min(1, dt * 6));
     const { pos, target } = this.pose(t);
     tmpM.lookAt(pos, target, UP);
     const q = new THREE.Quaternion().setFromRotationMatrix(tmpM);
